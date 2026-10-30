@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 import pytest
+from fakes import FakeAdapterFactory, FakeSearchFactory
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
@@ -36,8 +37,22 @@ def fake_request(
 
 
 @pytest.fixture
-def services() -> Services:
-    return Services(clock=lambda: FIXED_NOW)
+def fake_ai() -> FakeAdapterFactory:
+    return FakeAdapterFactory()
+
+
+@pytest.fixture
+def fake_search() -> FakeSearchFactory:
+    return FakeSearchFactory()
+
+
+@pytest.fixture
+def services(fake_ai, fake_search) -> Services:
+    return Services(
+        clock=lambda: FIXED_NOW,
+        adapter_factory=fake_ai,
+        search_factory=fake_search,
+    )
 
 
 @pytest.fixture

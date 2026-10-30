@@ -11,6 +11,8 @@ from app.auth import install_auth
 from app.config import Paths
 from app.db import make_engine, make_session_factory, run_migrations
 from app.routes import auth as auth_routes
+from app.services.ai import Adapter, ProviderConfig, make_adapter
+from app.services.search import SearchClient, make_search_client
 from app.services.secrets import (
     Vault,
     load_or_create_key,
@@ -25,6 +27,8 @@ class Services:
     """Things the app reaches out to, swapped for fakes in tests."""
 
     clock: Callable[[], datetime]
+    adapter_factory: Callable[[ProviderConfig], Adapter] = make_adapter
+    search_factory: Callable[[str], SearchClient] = make_search_client
 
 
 def default_services() -> Services:

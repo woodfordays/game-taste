@@ -212,3 +212,38 @@ class ReviewDraft(Base):
     named_group_id: Mapped[int | None] = mapped_column(ForeignKey("named_group.id"))
     people: Mapped[list[int]]
     updated_at: Mapped[datetime]
+
+
+class AiCall(Base):
+    """One call to an AI provider, kept whether it worked or not."""
+
+    __tablename__ = "ai_call"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job: Mapped[str | None]
+    provider_kind: Mapped[str]
+    model: Mapped[str]
+    prompt_name: Mapped[str]
+    prompt_hash: Mapped[str]  # sha256 hex of the prompt
+    request: Mapped[str] = mapped_column(Text)
+    response: Mapped[str | None] = mapped_column(Text)
+    input_tokens: Mapped[int | None]
+    output_tokens: Mapped[int | None]
+    duration_ms: Mapped[int]
+    error: Mapped[str | None] = mapped_column(Text)
+    run_ref: Mapped[str | None]
+    created_at: Mapped[datetime]
+
+
+class SearchCall(Base):
+    """One Tavily search, kept whether it worked or not."""
+
+    __tablename__ = "search_call"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    query: Mapped[str]
+    # none_as_null: a failed search stores SQL NULL, not the JSON text "null".
+    raw_results: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    run_ref: Mapped[str | None]
+    created_at: Mapped[datetime]
