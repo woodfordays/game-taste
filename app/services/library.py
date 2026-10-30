@@ -1,4 +1,4 @@
-"""The game library: syncing from Steam and the artwork for each game."""
+"""The game library: connecting to Steam, syncing from it, and the artwork for each game."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -7,7 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Game, PlaytimeSnapshot
+from app.services.secrets import Vault
+from app.services.settings import set_secret, set_setting
 from app.services.steam import SteamClient
+
+STEAM_KEY_SETTING = "steam_api_key"
+STEAM_ID_SETTING = "steam_id"
 
 
 @dataclass
@@ -64,6 +69,29 @@ def sync_library(
         game.last_played_at = item.last_played_at
     db.commit()
     return SyncResult(added=added, updated=updated, total=len(owned))
+
+
+def connect_steam(
+    db: Session,
+    vault: Vault,
+    steam: SteamClient,
+    api_key: str,
+    profile: str,
+    now: datetime,
+) -> SyncResult:
+    """Connect Steam: resolve `profile`, import the library, then save the key and ID.
+
+    `profile` is whatever the user pasted: a profile link, a custom URL name or a
+    SteamID64. The key (encrypted) and the resolved SteamID64 are saved only once the
+    import has worked, so a failure leaves an earlier connection as it was. The store
+    region is not touched. Raises `SteamError` with nothing saved.
+    """
+    api_key = api_key.strip()
+    steamid = steam.resolve_steamid(api_key, profile)
+    result = sync_library(db, steam, api_key, steamid, now)
+    set_secret(db, vault, STEAM_KEY_SETTING, api_key)
+    set_setting(db, STEAM_ID_SETTING, steamid)
+    return result
 
 
 def _snapshot(

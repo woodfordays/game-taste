@@ -1,0 +1,46 @@
+{#- The "Connect Steam" form of onboarding step 3. A submit swaps this whole form, so it carries its own errors.
+    Context: `steam_key` and `steam_profile` (what was typed, shown back after a failure), `error` (what Steam
+    said, a plain string), and `key_error` and `profile_error` (a missing field). All three errors may be none.
+    The skip button belongs to #steam-skip-form, which onboarding/steam.html defines outside this form. -#}
+{% from "partials/field.html" import field %}
+<form id="steam-form" class="auth-form" method="post" action="/onboarding/steam"
+  hx-post="/onboarding/steam" hx-target="#steam-form" hx-swap="outerHTML" hx-disabled-elt="#steam-submit, #steam-skip">
+
+  {% if error %}
+  {#- The message can quote what the user typed, so it is escaped like any text and never marked safe. -#}
+  <div class="em-alert em-alert--danger" role="alert">
+    <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
+    <div class="em-alert__content">
+      <p class="em-alert__title text-label">Steam import failed</p>
+      <div class="em-alert__body text-body">
+        <p>{{ error }}</p>
+        <p>Nothing was saved. You can also skip this step and connect Steam later.</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="steam-key">
+    {#- new-password keeps browsers from filling the login password into a key field. -#}
+    {{ field("steam-key", "steam_key", "Steam Web API key", type="password", value=steam_key, error=key_error, autocomplete="new-password", autofocus=not profile_error, mono=true) }}
+    <p class="text-caption steam-key__link">
+      <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener" class="app-link">Where do I get a key?
+        <svg class="em-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 4.5h5.5V10"/><path d="M19.5 4.5L11 13"/><path d="M17.5 14v3.5a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2H10"/></svg></a>
+      <span class="steam-key__note">Opens in a new tab.</span>
+    </p>
+  </div>
+
+  {{ field("steam-profile", "steam_profile", "Steam profile link or SteamID64", value=steam_profile, error=profile_error, hint="Paste your profile link, your custom URL name or your 17-digit SteamID64.", placeholder="steamcommunity.com/id/your-name", autocomplete="off", autofocus=profile_error, mono=true) }}
+
+  <p class="text-caption steam-note">Steam shares your games only when Game details are set to Public. In Steam, open your profile's Privacy Settings and set Game details to Public.</p>
+
+  <div class="steam-actions">
+    <a href="/onboarding/ai" class="em-btn em-btn--ghost em-btn--md text-label steam-actions__back"><span class="em-btn__label">Back</span></a>
+    <button id="steam-skip" type="submit" form="steam-skip-form" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Skip for now</span></button>
+    <button id="steam-submit" type="submit" class="em-btn em-btn--primary em-btn--md text-label"><span class="em-btn__label">Import my library</span></button>
+  </div>
+  <p class="htmx-indicator steam-importing text-caption" role="status">
+    <span class="em-spinner em-spinner--ember" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2.5"><circle class="em-spinner__track" cx="12" cy="12" r="9"/><path class="em-spinner__arc" d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>
+    <span>Importing your library... A large library can take a few seconds.</span>
+  </p>
+</form>

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Connect Steam - Game Taste{% endblock %}
+{% block shell %}
+<main class="auth-page auth-page--top">
+  <div class="auth-panel auth-panel--wide">
+    <p class="text-eyebrow auth-eyebrow">Step 3 of 5</p>
+    <h1 class="text-display">Connect Steam</h1>
+    <p class="text-body-lg auth-lede">Game Taste imports the games you own and how long you've played each one, so you can review them and keep track of what you're playing. Paste a Steam Web API key and your profile link. The key is saved encrypted. You can skip this and connect Steam later in Settings.</p>
+    <div class="em-card">
+      <div class="em-card__body">
+        {% include "partials/steam_form.html" %}
+      </div>
+    </div>
+    {#- The Skip button sits in the form's button row but belongs to this form, so pressing Enter in a field imports instead of skipping. -#}
+    <form id="steam-skip-form" method="post" action="/onboarding/steam/skip" hidden></form>
+  </div>
+</main>
+{% endblock %}
