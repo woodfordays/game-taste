@@ -10,12 +10,14 @@ from app.services.secrets import (
     hash_password,
     load_or_create_key,
     load_or_create_session_secret,
+    new_password_problem,
     verify_password,
 )
 from app.services.settings import (
     delete_setting,
     get_secret,
     get_setting,
+    known_timezones,
     set_secret,
     set_setting,
 )
@@ -175,3 +177,39 @@ def test_set_setting_over_a_secret_stores_plain_text(app, db):
     set_setting(db, "steam_api_key", "plain")
     row = db.get(Setting, "steam_api_key")
     assert row.value == "plain" and not row.encrypted
+
+
+def test_new_password_rules_name_the_field_and_the_fix():
+    assert new_password_problem("sample-password", "sample-password") is None
+    assert new_password_problem("short", "short") == (
+        "password",
+        "Use at least 8 characters.",
+    )
+    assert new_password_problem("sample-password", "other-password") == (
+        "confirm",
+        "The two passwords don't match.",
+    )
+
+
+def test_new_password_rules_check_the_length_first_and_count_characters():
+    # A short password is reported even when the two differ.
+    assert new_password_problem("short", "other")[0] == "password"
+    assert new_password_problem("12345678", "12345678") is None
+    assert new_password_problem("1234567", "1234567")[0] == "password"
+    # Spaces are part of a password, not padding.
+    assert new_password_problem("        ", "        ") is None
+
+
+def test_the_new_password_messages_are_plain_text():
+    for _field, message in (
+        new_password_problem("short", "short"),
+        new_password_problem("sample-password", "other-password"),
+    ):
+        assert type(message) is str
+
+
+def test_known_timezones():
+    zones = known_timezones()
+    assert {"UTC", "Europe/London", "America/Chicago"} <= zones
+    assert "Mars/Base" not in zones
+    assert known_timezones() is zones  # computed once

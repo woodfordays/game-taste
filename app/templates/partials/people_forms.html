@@ -1,0 +1,39 @@
+{#- The two "add" forms of the people section, shared by onboarding step 4 and Settings. Each swaps the whole people section
+    (`#people-section` in onboarding, `#settings-people` in Settings, named by `target`), because a new person also joins the
+    group form's checkboxes. Names are escaped like any text. -#}
+{% from "partials/field.html" import field, field_help %}
+
+{#- `name` and `error` are what was typed and the refusal, both may be none. -#}
+{% macro add_person_form(action, target, name, error, autofocus=true) %}
+<form id="person-form" class="people-form" method="post" action="{{ action }}"
+  hx-post="{{ action }}" hx-target="{{ target }}" hx-swap="outerHTML" hx-disabled-elt="find button">
+  {{ field("person-name", "name", "Name", value=name, error=error, autocomplete="off", autofocus=autofocus) }}
+  <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Add person</span></button>
+</form>
+{% endmacro %}
+
+{#- `people` is everyone, by name; `selected` the ids ticked. `error` sits under the name, `member_error` under the members. -#}
+{% macro add_group_form(action, target, people, name, error, member_error, selected, autofocus=false) %}
+<form id="group-form" class="people-form" method="post" action="{{ action }}"
+  hx-post="{{ action }}" hx-target="{{ target }}" hx-swap="outerHTML" hx-disabled-elt="find button">
+  {{ field("group-name", "name", "Group name", value=name, error=error, autocomplete="off", autofocus=autofocus, disabled=not people) }}
+  {% if people %}
+  <fieldset class="people-members"{% if member_error %} aria-describedby="members-error"{% endif %}>
+    <legend class="em-field__label text-label">Members</legend>
+    {%- for person in people %}
+    <div class="em-check">
+      <input id="member-{{ person.id }}" type="checkbox" class="em-check__box" name="members" value="{{ person.id }}"
+        {%- if person.id in selected %} checked{% endif %}>
+      <span class="em-check__text">
+        <label for="member-{{ person.id }}" class="em-check__label text-body">{{ person.name }}</label>
+      </span>
+    </div>
+    {%- endfor %}
+    {{ field_help("members", none, member_error) }}
+  </fieldset>
+  {% else %}
+  <p class="people-note text-body">Add people first, then group them.</p>
+  {% endif %}
+  <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"{% if not people %} disabled{% endif %}><span class="em-btn__label">Add group</span></button>
+</form>
+{% endmacro %}

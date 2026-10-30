@@ -15,13 +15,11 @@ from app.services.ai_setup import (
     AiSetup,
     CheckLine,
     ai_form_view,
-    parse_ai_form,
     provider_row,
-    run_ai_checks,
-    save_ai_setup,
     stored_ai_setup,
+    submit_ai_form,
 )
-from app.services.library import connect_steam
+from app.services.library import KEY_MISSING, PROFILE_MISSING, connect_steam
 from app.services.people import (
     PICK_PEOPLE,
     PeopleError,
@@ -29,9 +27,10 @@ from app.services.people import (
     add_person,
     list_groups,
     list_people,
+    parse_member_ids,
 )
 from app.services.steam import SteamClient, SteamError
-from app.web import is_htmx, read_form, redirect, render
+from app.web import is_htmx, read_form, redirect, render, typed
 
 router = APIRouter()
 
@@ -41,9 +40,6 @@ PEOPLE_PATH = "/onboarding/people"
 TOUR_PATH = "/onboarding/tour"
 FINISH_PATH = "/onboarding/finish"
 HOME_PATH = "/"
-
-KEY_MISSING = "Enter your Steam Web API key."
-PROFILE_MISSING = "Enter your Steam profile link or SteamID64."
 
 
 def _ai_response(
@@ -91,29 +87,22 @@ def ai_submit(
     db: Session = Depends(get_db),
 ):
     services = request.app.state.services
-    vault = request.app.state.vault
-    stored = stored_ai_setup(db, vault)
-
-    setup, errors = parse_ai_form(form, stored)
-    if errors:
-        return _ai_response(request, setup, stored, errors=errors)
-
-    checks = run_ai_checks(db, setup, services)
-    if not all(line.result.ok for line in checks):
-        return _ai_response(request, setup, stored, checks=checks)
-
-    save_ai_setup(db, vault, setup, now=services.clock())
+    result = submit_ai_form(
+        db, request.app.state.vault, form, services, now=services.clock()
+    )
+    if not result.saved:
+        return _ai_response(
+            request,
+            result.setup,
+            result.stored,
+            errors=result.errors,
+            checks=result.checks,
+        )
     advance_step(db, "steam")
     return redirect(request, STEAM_PATH)
 
 
 # --- step 3: connect Steam ------------------------------------------------------
-
-
-def _typed(form: FormData, name: str) -> str:
-    """One field's text with the whitespace a paste leaves around it removed."""
-    value = form.get(name)
-    return value.strip() if isinstance(value, str) else ""
 
 
 def _steam_response(
@@ -154,8 +143,8 @@ def steam_submit(
     db: Session = Depends(get_db),
 ):
     services = request.app.state.services
-    key = _typed(form, "steam_key")
-    profile = _typed(form, "steam_profile")
+    key = typed(form, "steam_key")
+    profile = typed(form, "steam_profile")
     if not key or not profile:
         return _steam_response(
             request,
@@ -223,19 +212,6 @@ def _people_response(
     )
 
 
-def _ticked_people(form: FormData) -> tuple[list[int], bool]:
-    """The ids of the people ticked in the group form, and whether every value was a whole
-    number. A value that isn't one can only come from outside the form."""
-    ids: list[int] = []
-    clean = True
-    for value in form.getlist("members"):
-        if isinstance(value, str) and value.isascii() and value.isdecimal():
-            ids.append(int(value))
-        else:
-            clean = False
-    return ids, clean
-
-
 @router.get(PEOPLE_PATH)
 def people_page(request: Request, db: Session = Depends(get_db)):
     return _people_response(request, db)
@@ -247,7 +223,7 @@ def people_add_person(
     form: FormData = Depends(read_form),
     db: Session = Depends(get_db),
 ):
-    name = _typed(form, "name")
+    name = typed(form, "name")
     try:
         add_person(db, name, request.app.state.services.clock())
     except PeopleError as failure:
@@ -264,8 +240,8 @@ def people_add_group(
     form: FormData = Depends(read_form),
     db: Session = Depends(get_db),
 ):
-    name = _typed(form, "name")
-    members, clean = _ticked_people(form)
+    name = typed(form, "name")
+    members, clean = parse_member_ids(form.getlist("members"))
     try:
         if not clean:
             raise PeopleError(PICK_PEOPLE)

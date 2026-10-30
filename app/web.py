@@ -114,6 +114,15 @@ def is_htmx(request: Request) -> bool:
     return request.headers.get("hx-request") == "true"
 
 
+def typed(form: FormData, name: str) -> str:
+    """One field's text with the whitespace a paste leaves around it removed.
+
+    A missing field, or a file, is empty text.
+    """
+    value = form.get(name)
+    return value.strip() if isinstance(value, str) else ""
+
+
 async def read_form(request: Request) -> FormData:
     """The posted form. Read here so the route itself can be a plain function.
 

@@ -19,6 +19,7 @@ from app.services.ai_setup import (
     run_ai_checks,
     save_ai_setup,
     stored_ai_setup,
+    submit_ai_form,
 )
 from app.services.secrets import Vault
 from app.services.settings import get_secret, get_setting, set_secret
@@ -672,3 +673,52 @@ def test_form_renders_in_settings_mode(app, onboarded_client, db):
     assert "Test and save" in text and "Test and continue" not in text
     assert "em-btn--primary" not in text
     assert "Saved key ending in mple" in text and "ant-sample" not in text
+
+
+# --- the submit Settings shares ---------------------------------------------
+
+
+def test_submit_with_missing_details_tests_nothing(db, app, services, fake_ai):
+    result = submit_ai_form(
+        db, app.state.vault, form_of({**VALID, "tavily_key": ""}), services, now=FIXED_NOW
+    )
+    assert not result.saved and result.checks is None
+    assert result.errors == ["Add a Tavily key. All game research uses it."]
+    assert fake_ai.calls == [] and db.get(Provider, "anthropic") is None
+    # The typed values come back, next to what is saved (nothing yet).
+    assert result.setup.jobs[Job.JUDGE] == (ProviderKind.LOCAL, "sample-local")
+    assert result.stored.providers == {}
+
+
+def test_submit_with_a_failed_check_saves_nothing(db, app, services, fake_ai):
+    fake_ai.fail("sample-big", RuntimeError("unknown model"))
+    result = submit_ai_form(
+        db, app.state.vault, form_of(VALID), services, now=FIXED_NOW
+    )
+    assert not result.saved and result.errors == []
+    assert [line.result.ok for line in result.checks] == [False, True, True, True]
+    assert db.get(Provider, "anthropic") is None
+    assert result.setup.providers[ProviderKind.ANTHROPIC].api_key == "ant-sample"
+    assert result.stored.providers == {}
+
+
+def test_submit_saves_and_returns_what_is_saved(db, app, services):
+    result = submit_ai_form(
+        db, app.state.vault, form_of(VALID), services, now=FIXED_NOW
+    )
+    assert result.saved and result.errors == []
+    assert all(line.result.ok for line in result.checks)
+    assert db.get(Provider, "anthropic").updated_at == FIXED_NOW
+    # Once saved, what the form should show is what is saved.
+    assert result.setup == result.stored
+    assert result.stored.tavily_key == "tvly-sample"
+    assert result.stored.providers[ProviderKind.ANTHROPIC].api_key == "ant-sample"
+
+
+def test_submit_blank_keys_keep_the_saved_ones(db, app, services):
+    save_valid(db, app)
+    data = {**VALID, "key_anthropic": "", "tavily_key": ""}
+    result = submit_ai_form(db, app.state.vault, form_of(data), services, now=FIXED_NOW)
+    assert result.saved
+    assert result.stored.providers[ProviderKind.ANTHROPIC].api_key == "ant-sample"
+    assert result.stored.tavily_key == "tvly-sample"

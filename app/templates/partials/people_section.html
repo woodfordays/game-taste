@@ -3,7 +3,7 @@
     outside it. Context: `people` (everyone, by name), `groups` (pairs of a group and its members), `person_name` and
     `group_name` (what was typed, shown back after a refusal), `selected` (the ids ticked in the group form), and
     `person_error`, `group_error` and `member_error` (plain strings, any may be none). Names are escaped like any text. -#}
-{% from "partials/field.html" import field, field_help %}
+{% from "partials/people_forms.html" import add_person_form, add_group_form %}
 <div id="people-section" class="people-section">
 
   <section class="em-card" aria-labelledby="people-title">
@@ -18,11 +18,7 @@
       {% else %}
       <p class="people-note text-body">No one yet. Add the people you play with.</p>
       {% endif %}
-      <form id="person-form" class="people-form" method="post" action="/onboarding/people/person"
-        hx-post="/onboarding/people/person" hx-target="#people-section" hx-swap="outerHTML" hx-disabled-elt="find button">
-        {{ field("person-name", "name", "Name", value=person_name, error=person_error, autocomplete="off", autofocus=not (group_error or member_error)) }}
-        <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Add person</span></button>
-      </form>
+      {{ add_person_form("/onboarding/people/person", "#people-section", person_name, person_error, autofocus=not (group_error or member_error)) }}
     </div>
   </section>
 
@@ -40,28 +36,7 @@
         {%- endfor %}
       </ul>
       {% endif %}
-      <form id="group-form" class="people-form" method="post" action="/onboarding/people/group"
-        hx-post="/onboarding/people/group" hx-target="#people-section" hx-swap="outerHTML" hx-disabled-elt="find button">
-        {{ field("group-name", "name", "Group name", value=group_name, error=group_error, autocomplete="off", autofocus=group_error, disabled=not people) }}
-        {% if people %}
-        <fieldset class="people-members"{% if member_error %} aria-describedby="members-error"{% endif %}>
-          <legend class="em-field__label text-label">Members</legend>
-          {%- for person in people %}
-          <div class="em-check">
-            <input id="member-{{ person.id }}" type="checkbox" class="em-check__box" name="members" value="{{ person.id }}"
-              {%- if person.id in selected %} checked{% endif %}>
-            <span class="em-check__text">
-              <label for="member-{{ person.id }}" class="em-check__label text-body">{{ person.name }}</label>
-            </span>
-          </div>
-          {%- endfor %}
-          {{ field_help("members", none, member_error) }}
-        </fieldset>
-        {% else %}
-        <p class="people-note text-body">Add people first, then group them.</p>
-        {% endif %}
-        <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"{% if not people %} disabled{% endif %}><span class="em-btn__label">Add group</span></button>
-      </form>
+      {{ add_group_form("/onboarding/people/group", "#people-section", people, group_name, group_error, member_error, selected, autofocus=group_error) }}
     </div>
   </section>
 

@@ -18,6 +18,10 @@ STEAM_ID_SETTING = "steam_id"
 
 SOURCE_STORE_SEARCH = "store_search"
 
+# Fixed copy for a connection form with a field left empty.
+KEY_MISSING = "Enter your Steam Web API key."
+PROFILE_MISSING = "Enter your Steam profile link or SteamID64."
+
 
 @dataclass
 class SyncResult:

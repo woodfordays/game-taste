@@ -7,6 +7,7 @@ user typed, so they are plain strings and the templates escape them.
 """
 
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import datetime
 
 from sqlalchemy import delete, func, select
@@ -75,6 +76,22 @@ def _taken_after_conflict(
     if existing is None:
         raise conflict
     return PeopleError(_TAKEN[model].format(existing.name))
+
+
+def parse_member_ids(values: Iterable[object]) -> tuple[list[int], bool]:
+    """The ids in the ticked checkbox values, and whether every value was a whole number.
+
+    A value that isn't one can only come from outside the form. The ids that did parse
+    still come back. Whether each id is a person is for the add and set functions to say.
+    """
+    ids: list[int] = []
+    clean = True
+    for value in values:
+        if isinstance(value, str) and value.isascii() and value.isdecimal():
+            ids.append(int(value))
+        else:
+            clean = False
+    return ids, clean
 
 
 def _member_ids(db: Session, member_ids: list[int]) -> list[int]:

@@ -16,6 +16,7 @@ from app.services.people import (
     group_member_ids,
     list_groups,
     list_people,
+    parse_member_ids,
     rename_group,
     rename_person,
     set_group_members,
@@ -711,3 +712,23 @@ def test_done_is_closed_before_this_step(client_at_steam_step, db):
     r = client_at_steam_step.post("/onboarding/people/done", follow_redirects=False)
     assert r.headers["location"] == "/onboarding/steam"
     assert get_setting(db, "onboarding_step") == "steam"
+
+
+# --- parse_member_ids ----------------------------------------------------------
+
+
+def test_parse_member_ids_reads_whole_numbers():
+    assert parse_member_ids(["3", "1", "3"]) == ([3, 1, 3], True)
+    assert parse_member_ids([]) == ([], True)
+
+
+@pytest.mark.parametrize("bad", ["", "x", "-1", "1.5", " 2", "٣", "1e3"])
+def test_parse_member_ids_flags_anything_else(bad):
+    # Only a request made outside the form can send one of these. The numbers that were
+    # fine still come back; the flag says the list can't be trusted.
+    assert parse_member_ids(["7", bad]) == ([7], False)
+
+
+def test_parse_member_ids_takes_a_huge_number_as_a_number():
+    # Whether a person has that id is the service's call; it must not overflow here.
+    assert parse_member_ids([str(2**80)]) == ([2**80], True)

@@ -1,3 +1,6 @@
+import zoneinfo
+from functools import lru_cache
+
 from sqlalchemy.orm import Session
 
 from app.models import Setting
@@ -43,3 +46,9 @@ def delete_setting(db: Session, key: str) -> None:
     if row is not None:
         db.delete(row)
         db.commit()
+
+
+@lru_cache(maxsize=1)
+def known_timezones() -> frozenset[str]:
+    """The names a timezone setting may take."""
+    return frozenset(zoneinfo.available_timezones())

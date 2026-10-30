@@ -1,11 +1,13 @@
+import io
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from conftest import FIXED_NOW, fake_request
+from starlette.datastructures import FormData, UploadFile
 from starlette.responses import Response
 
 from app.services.settings import set_setting
-from app.web import hours, lane_label, redirect, render, templates, when
+from app.web import hours, lane_label, redirect, render, templates, typed, when
 
 
 def test_static_assets_served(client):
@@ -248,3 +250,15 @@ def test_filters_are_registered_and_use_context_now_and_tz():
 def test_templates_autoescape():
     out = templates.env.from_string("{{ text }}").render(text="<b>Sam & Alex</b>")
     assert out == "&lt;b&gt;Sam &amp; Alex&lt;/b&gt;"
+
+
+def test_typed_strips_the_whitespace_a_paste_leaves():
+    form = FormData([("name", "  Sam \n"), ("empty", ""), ("inner", "a  b")])
+    assert typed(form, "name") == "Sam"
+    assert typed(form, "inner") == "a  b"
+    assert typed(form, "empty") == "" and typed(form, "missing") == ""
+
+
+def test_typed_ignores_a_file_upload():
+    upload = UploadFile(file=io.BytesIO(b"x"), filename="x.txt")
+    assert typed(FormData([("name", upload)]), "name") == ""

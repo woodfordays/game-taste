@@ -278,6 +278,53 @@ def save_ai_setup(
     db.commit()
 
 
+@dataclass
+class AiSubmitResult:
+    """What submitting the form came to, for the page to show.
+
+    `setup` holds the values to put back in the form: what was typed, or, once `saved`,
+    what is now saved. `stored` is what is saved. `errors` lists missing details (nothing
+    was tested); `checks` holds one line per connection test and is None when there were
+    `errors`. `saved` says every check passed and the setup was saved.
+    """
+
+    setup: AiSetup
+    stored: AiSetup
+    errors: list[str]
+    checks: list[CheckLine] | None
+    saved: bool
+
+
+def submit_ai_form(
+    db: Session,
+    vault: Vault,
+    form: Mapping[str, Any],
+    services: "Services",
+    *,
+    now: datetime,
+) -> AiSubmitResult:
+    """Handle a posted form: parse it, test every connection, and save only if all pass.
+
+    Onboarding step 2 and Settings share this. A blank key keeps the saved one (see
+    `parse_ai_form`). Nothing is tested while details are missing, and nothing is saved
+    unless every check passed.
+    """
+    stored = stored_ai_setup(db, vault)
+    setup, errors = parse_ai_form(form, stored)
+    if errors:
+        return AiSubmitResult(setup, stored, errors, None, saved=False)
+
+    checks = run_ai_checks(db, setup, services)
+    if not all(line.result.ok for line in checks):
+        return AiSubmitResult(setup, stored, [], checks, saved=False)
+
+    save_ai_setup(db, vault, setup, now=now)
+    # Read back, so the form shows keys as saved ("Saved key ending in ...") and never the
+    # ones just typed, and a key that couldn't be read before is no longer marked.
+    saved = stored_ai_setup(db, vault)
+    return AiSubmitResult(saved, saved, [], checks, saved=True)
+
+
 # --- what the form shows ------------------------------------------------------
 
 

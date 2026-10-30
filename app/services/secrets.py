@@ -74,3 +74,24 @@ def verify_password(hashed: str, pw: str) -> bool:
         return _hasher.verify(hashed, pw)
     except VerifyMismatchError:
         return False
+
+
+MIN_PASSWORD_LENGTH = 8
+
+# Fixed copy: plain strings, escaped like any text when a template shows them.
+PASSWORD_TOO_SHORT = f"Use at least {MIN_PASSWORD_LENGTH} characters."
+PASSWORDS_DIFFER = "The two passwords don't match."
+
+
+def new_password_problem(password: str, confirm: str) -> tuple[str, str] | None:
+    """The first rule a new password breaks, or None when it is fine.
+
+    The first-run page and the Settings password change share this. The answer is the
+    field the message belongs under ("password" or "confirm") and the message, which says
+    what to do.
+    """
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return "password", PASSWORD_TOO_SHORT
+    if confirm != password:
+        return "confirm", PASSWORDS_DIFFER
+    return None

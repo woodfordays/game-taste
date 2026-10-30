@@ -1,37 +1,25 @@
 """First-run password, login and logout."""
 
-import zoneinfo
-from functools import lru_cache
-
 from fastapi import APIRouter, Depends, Form, Request
 from markupsafe import Markup
 from sqlalchemy.orm import Session
 
 from app.auth import PASSWORD_PATH, advance_step
 from app.db import get_db
-from app.services.secrets import hash_password, verify_password
-from app.services.settings import get_setting, set_setting
+from app.services.secrets import hash_password, new_password_problem, verify_password
+from app.services.settings import get_setting, known_timezones, set_setting
 from app.web import redirect, render
 
 router = APIRouter()
 
-MIN_PASSWORD_LENGTH = 8
-
 # Fixed copy. Markup keeps the apostrophes as typed instead of turning them into &#39;.
-PASSWORD_TOO_SHORT = Markup("Use at least 8 characters.")
-PASSWORDS_DIFFER = Markup("The two passwords don't match.")
 WRONG_PASSWORD = Markup("That password didn't match. Try again.")
-
-
-@lru_cache(maxsize=1)
-def _known_timezones() -> frozenset[str]:
-    return frozenset(zoneinfo.available_timezones())
 
 
 def clean_timezone(name: str) -> str:
     """The browser's time zone name if it's a real zone, else "UTC"."""
     name = name.strip()
-    return name if name in _known_timezones() else "UTC"
+    return name if name in known_timezones() else "UTC"
 
 
 @router.get("/onboarding/password")
@@ -52,17 +40,15 @@ def password_submit(
         return redirect(request, "/login")
 
     timezone = clean_timezone(timezone)
-    errors = {}
-    if len(password) < MIN_PASSWORD_LENGTH:
-        errors["password"] = PASSWORD_TOO_SHORT
-    elif confirm != password:
-        errors["confirm"] = PASSWORDS_DIFFER
-    if errors:
+    problem = new_password_problem(password, confirm)
+    if problem:
+        field, message = problem
+        # Markup keeps the apostrophes in the fixed copy as typed instead of &#39;.
         return render(
             request,
             "onboarding/password.html",
             status_code=422,
-            errors=errors,
+            errors={field: Markup(message)},
             submitted_timezone=timezone,
         )
 
