@@ -12,13 +12,15 @@
 
 {#- An Ember text field: label, input, and a hint that the error replaces. Same markup as Ember's TextField.
     `value` and `placeholder` are shown as given. `required=false` goes with `optional=true`, which puts
-    "Optional" beside the label. `mono` sets the value in the mono face, for keys and IDs. -#}
-{% macro field(id, name, label, type="text", hint=none, error=none, autocomplete=none, autofocus=false, value=none, placeholder=none, required=true, optional=false, mono=false) %}
+    "Optional" beside the label. `mono` sets the value in the mono face, for keys and IDs. `disabled` greys the field
+    out and leaves it out of the form post. -#}
+{% macro field(id, name, label, type="text", hint=none, error=none, autocomplete=none, autofocus=false, value=none, placeholder=none, required=true, optional=false, mono=false, disabled=false) %}
 <div class="em-field">
   <label for="{{ id }}" class="em-field__label text-label">{{ label }}{% if optional %}<span class="em-field__optional text-caption">Optional</span>{% endif %}</label>
-  <div class="em-input em-input--md{% if error %} is-invalid{% endif %}">
+  <div class="em-input em-input--md{% if error %} is-invalid{% endif %}{% if disabled %} is-disabled{% endif %}">
     <input id="{{ id }}" name="{{ name }}" type="{{ type }}" class="em-input__control {{ 'text-code' if mono else 'text-body' }}"
       {%- if required %} required{% endif %}
+      {%- if disabled %} disabled{% endif %}
       {%- if value %} value="{{ value }}"{% endif %}
       {%- if placeholder %} placeholder="{{ placeholder }}"{% endif %}
       {%- if autocomplete %} autocomplete="{{ autocomplete }}"{% endif %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Who you play with - Game Taste{% endblock %}
+{% block shell %}
+<main class="auth-page auth-page--top">
+  <div class="auth-panel auth-panel--wide">
+    <p class="text-eyebrow auth-eyebrow">Step 4 of 5</p>
+    <h1 class="text-display">Who you play with</h1>
+    <p class="text-body-lg auth-lede">Some games are better with other people. Add the people you play with, and group them if you often play with the same set. When you review a game you played together, you can say who was there. This step is optional, and you can add, rename and change people and groups later in Settings.</p>
+    {% include "partials/people_section.html" %}
+    {#- Continue and Skip for now are one form of their own, apart from the add forms, so pressing Enter in a name field adds a person instead of leaving the step. Both do the same thing. -#}
+    <form class="people-actions" method="post" action="/onboarding/people/done">
+      <a href="/onboarding/steam" class="em-btn em-btn--ghost em-btn--md text-label people-actions__back"><span class="em-btn__label">Back</span></a>
+      <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Skip for now</span></button>
+      <button type="submit" class="em-btn em-btn--primary em-btn--md text-label"><span class="em-btn__label">Continue</span></button>
+    </form>
+  </div>
+</main>
+{% endblock %}

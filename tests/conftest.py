@@ -109,6 +109,13 @@ def client_at_steam_step(logged_in_client, db):
 
 
 @pytest.fixture
+def client_at_people_step(logged_in_client, db):
+    """Like `logged_in_client`, moved on to the `people` step."""
+    advance_step(db, "people")
+    return logged_in_client
+
+
+@pytest.fixture
 def onboarded_client(logged_in_client, db):
     """Like `logged_in_client`, with onboarding finished."""
     advance_step(db, "done")

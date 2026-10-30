@@ -301,6 +301,128 @@
   display: flex;
 }
 
+/* "Who you play with": onboarding step 4. Two cards, each a list above its add form. */
+.people-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.people-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.people-card > h2,
+.people-card > p {
+  margin: 0;
+}
+
+.people-note {
+  color: var(--ink-muted);
+}
+
+/* Rows are separated by hairlines rather than boxed, like the Library list. */
+.people-list,
+.people-groups {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.people-list__item {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.people-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.people-group > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.people-group__members {
+  color: var(--ink-muted);
+}
+
+.people-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.people-form .em-field {
+  align-self: stretch;
+}
+
+.people-members {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.people-members > legend {
+  padding: 0;
+}
+
+.people-members .em-check__label {
+  overflow-wrap: anywhere;
+}
+
+/* Back sits at the start of the row; Skip and Continue stay together at the end. The tour's
+   Back and Next do the same with the screen count between them. */
+.people-actions,
+.tour-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.people-actions {
+  justify-content: flex-end;
+}
+
+.people-actions__back {
+  margin-right: auto;
+}
+
+.tour-actions {
+  justify-content: space-between;
+}
+
+.tour-actions form,
+.tour-body > p,
+.tour-count {
+  margin: 0;
+}
+
+.tour-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tour-count {
+  color: var(--ink-muted);
+}
+
 /* The Library page. */
 .library-head {
   display: flex;

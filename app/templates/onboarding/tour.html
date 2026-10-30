@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{#- Onboarding step 5, one screen of the quick tour. Context: `screen` (a title and its paragraphs, plain text), `page` and
+    `pages` (this screen's place and the count), `back_url` and `next_url`, and `last` (the final screen, which finishes
+    setup instead of moving to a next screen). -#}
+{% block title %}Quick tour - Game Taste{% endblock %}
+{% block shell %}
+<main class="auth-page auth-page--top">
+  <div class="auth-panel auth-panel--wide">
+    <p class="text-eyebrow auth-eyebrow">Step 5 of 5</p>
+    <h1 class="text-display">{{ screen.title }}</h1>
+    <div class="em-card">
+      <div class="em-card__body tour-body">
+        {%- for paragraph in screen.body %}
+        <p class="text-body-lg">{{ paragraph }}</p>
+        {%- endfor %}
+      </div>
+    </div>
+    <div class="tour-actions">
+      <a href="{{ back_url }}" class="em-btn em-btn--ghost em-btn--md text-label tour-actions__back"><span class="em-btn__label">Back</span></a>
+      <p class="tour-count text-caption">Screen {{ page }} of {{ pages }}</p>
+      {% if last -%}
+      <form method="post" action="/onboarding/finish">
+        <button type="submit" class="em-btn em-btn--primary em-btn--md text-label"><span class="em-btn__label">Go to Home</span></button>
+      </form>
+      {%- else -%}
+      <a href="{{ next_url }}" class="em-btn em-btn--primary em-btn--md text-label"><span class="em-btn__label">Next</span></a>
+      {%- endif %}
+    </div>
+  </div>
+</main>
+{% endblock %}
