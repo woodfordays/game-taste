@@ -1,7 +1,9 @@
+from collections.abc import Iterator
 from datetime import datetime, timezone
 
+import httpx
 import pytest
-from fakes import FakeAdapterFactory, FakeSearchFactory
+from fakes import FakeAdapterFactory, FakeSearchFactory, FakeSteam
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
@@ -9,6 +11,7 @@ from app.auth import advance_step
 from app.main import Services, create_app
 from app.services.secrets import hash_password
 from app.services.settings import set_setting
+from app.services.steam import SteamClient
 
 FIXED_NOW = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
 
@@ -47,12 +50,25 @@ def fake_search() -> FakeSearchFactory:
 
 
 @pytest.fixture
-def services(fake_ai, fake_search) -> Services:
-    return Services(
+def fake_steam() -> FakeSteam:
+    return FakeSteam()
+
+
+@pytest.fixture
+def services(fake_ai, fake_search, fake_steam) -> Iterator[Services]:
+    services = Services(
         clock=lambda: FIXED_NOW,
         adapter_factory=fake_ai,
         search_factory=fake_search,
+        steam_http=httpx.Client(transport=httpx.MockTransport(fake_steam.handler)),
     )
+    yield services
+    services.steam_http.close()
+
+
+@pytest.fixture
+def steam_client(services) -> SteamClient:
+    return SteamClient(services.steam_http)
 
 
 @pytest.fixture

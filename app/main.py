@@ -1,8 +1,9 @@
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,6 +31,7 @@ class Services:
     clock: Callable[[], datetime]
     adapter_factory: Callable[[ProviderConfig], Adapter] = make_adapter
     search_factory: Callable[[str], SearchClient] = make_search_client
+    steam_http: httpx.Client = field(default_factory=lambda: httpx.Client(timeout=20))
 
 
 def default_services() -> Services:

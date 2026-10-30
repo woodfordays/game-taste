@@ -1,6 +1,8 @@
-"""Stand-ins for the AI providers and Tavily, so no test touches the network."""
+"""Stand-ins for the AI providers, Tavily and Steam, so no test touches the network."""
 
 import copy
+
+import httpx
 
 from app.services.ai import Completion, ProviderConfig, ProviderKind
 
@@ -87,6 +89,71 @@ class FakeSearchFactory:
 
     def fail(self, exc: Exception) -> None:
         self.failure = exc
+
+
+class FakeSteam:
+    """Stands in for Steam. Its `.handler` is an `httpx.MockTransport` handler that
+    routes by URL path, so nothing leaves the process.
+
+    `.owned` is the `games` list GetOwnedGames returns (empty means a private
+    profile, which Steam answers with an empty `response`). `.vanity` maps a vanity
+    name to a SteamID64, and `.store_hits` is the store search `items` list.
+    `.requests` holds every request the client made. `.fail_with(401)` answers every
+    request with that status, `.fail_with(exc)` raises `exc` from every request, and
+    `.fail_with(None)` clears it.
+    """
+
+    def __init__(self) -> None:
+        self.owned: list[dict] = [
+            {
+                "appid": 10,
+                "name": "Sample Quest",
+                "playtime_forever": 600,
+                "rtime_last_played": 1768000000,
+            },
+            {
+                "appid": 20,
+                "name": "Test Tactics",
+                "playtime_forever": 120,
+                "rtime_last_played": 0,
+            },
+        ]
+        self.vanity: dict[str, str] = {}
+        self.store_hits: list[dict] = []
+        self.requests: list[httpx.Request] = []
+        self._failure: int | Exception | None = None
+
+    def fail_with(self, failure: int | Exception | None) -> None:
+        self._failure = failure
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if isinstance(self._failure, Exception):
+            raise self._failure
+        if isinstance(self._failure, int):
+            return httpx.Response(self._failure)
+        path = request.url.path
+        if path == "/ISteamUser/ResolveVanityURL/v1/":
+            steamid = self.vanity.get(request.url.params.get("vanityurl", ""))
+            if steamid is None:
+                return httpx.Response(
+                    200, json={"response": {"success": 42, "message": "No match"}}
+                )
+            return httpx.Response(
+                200, json={"response": {"success": 1, "steamid": steamid}}
+            )
+        if path == "/IPlayerService/GetOwnedGames/v1/":
+            if not self.owned:
+                return httpx.Response(200, json={"response": {}})
+            return httpx.Response(
+                200,
+                json={"response": {"game_count": len(self.owned), "games": self.owned}},
+            )
+        if path == "/api/storesearch/":
+            return httpx.Response(
+                200, json={"total": len(self.store_hits), "items": self.store_hits}
+            )
+        return httpx.Response(404)
 
 
 # A complete, valid "Connect your AI" form: two providers, three jobs and a Tavily key.
