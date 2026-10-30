@@ -10,8 +10,11 @@ class _FakeAdapter:
         self._factory = factory
         self._cfg = cfg
 
-    def complete(self, model: str, prompt: str) -> Completion:
+    def complete(
+        self, model: str, prompt: str, *, timeout: float | None = None
+    ) -> Completion:
         self._factory.calls.append((self._cfg.kind, model, prompt))
+        self._factory.timeouts.append(timeout)
         failure = self._factory.failures.get(model)
         if failure is not None:
             raise failure
@@ -22,12 +25,14 @@ class _FakeAdapter:
 class FakeAdapterFactory:
     """Stands in for `make_adapter`.
 
-    `.calls` holds one (kind, model, prompt) per `complete()`. Every reply is "ok"
-    unless `.replies[model]` says otherwise, and a model passed to `.fail()` raises.
+    `.calls` holds one (kind, model, prompt) per `complete()`, and `.timeouts` the
+    timeout each of those calls was given. Every reply is "ok" unless
+    `.replies[model]` says otherwise, and a model passed to `.fail()` raises.
     """
 
     def __init__(self) -> None:
         self.calls: list[tuple[ProviderKind, str, str]] = []
+        self.timeouts: list[float | None] = []
         self.replies: dict[str, str] = {}
         self.failures: dict[str, Exception] = {}
 

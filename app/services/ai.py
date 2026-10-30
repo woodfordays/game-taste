@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.models import AiCall
 
 MAX_OUTPUT_TOKENS = 8192
+# A connection check gives up after this many seconds, and does not retry.
+CHECK_TIMEOUT_SECONDS = 30
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 CONNECTION_TEST_PROMPT = "Reply with the single word: ok"
 LOCAL_URL_HINT = "Check the URL. Most local servers end in /v1."
@@ -62,7 +64,14 @@ class Completion:
 
 
 class Adapter(Protocol):
-    def complete(self, model: str, prompt: str) -> Completion: ...
+    def complete(
+        self, model: str, prompt: str, *, timeout: float | None = None
+    ) -> Completion:
+        """Ask the model. A timeout (seconds) also turns off the SDK's retries for the call.
+
+        `None` keeps the SDK's own timeout and retries, which suit long real work.
+        """
+        ...
 
 
 class AIError(Exception):
@@ -93,8 +102,13 @@ class OpenAICompatibleAdapter:
             self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         return self._client
 
-    def complete(self, model: str, prompt: str) -> Completion:
-        response = self._get_client().chat.completions.create(
+    def complete(
+        self, model: str, prompt: str, *, timeout: float | None = None
+    ) -> Completion:
+        client = self._get_client()
+        if timeout is not None:
+            client = client.with_options(timeout=timeout, max_retries=0)
+        response = client.chat.completions.create(
             model=model, messages=[{"role": "user", "content": prompt}]
         )
         message = response.choices[0].message if response.choices else None
@@ -118,8 +132,13 @@ class AnthropicAdapter:
             self._client = Anthropic(api_key=self.api_key)
         return self._client
 
-    def complete(self, model: str, prompt: str) -> Completion:
-        response = self._get_client().messages.create(
+    def complete(
+        self, model: str, prompt: str, *, timeout: float | None = None
+    ) -> Completion:
+        client = self._get_client()
+        if timeout is not None:
+            client = client.with_options(timeout=timeout, max_retries=0)
+        response = client.messages.create(
             model=model,
             max_tokens=MAX_OUTPUT_TOKENS,
             messages=[{"role": "user", "content": prompt}],
@@ -145,9 +164,22 @@ class GeminiAdapter:
             self._client = genai.Client(api_key=self.api_key)
         return self._client
 
-    def complete(self, model: str, prompt: str) -> Completion:
+    def complete(
+        self, model: str, prompt: str, *, timeout: float | None = None
+    ) -> Completion:
+        extra: dict[str, Any] = {}
+        if timeout is not None:
+            from google.genai import types
+
+            # Gemini's timeout is in milliseconds. One attempt means no retries.
+            extra["config"] = types.GenerateContentConfig(
+                http_options=types.HttpOptions(
+                    timeout=round(timeout * 1000),
+                    retry_options=types.HttpRetryOptions(attempts=1),
+                )
+            )
         response = self._get_client().models.generate_content(
-            model=model, contents=prompt
+            model=model, contents=prompt, **extra
         )
         usage = response.usage_metadata
         output_tokens = None
@@ -197,9 +229,11 @@ def call_and_log(
     run_ref: str | None = None,
     adapter_factory=make_adapter,
     now: datetime | None = None,
+    timeout: float | None = None,
 ) -> Completion:
     """Ask the model and record the call, whether it worked or not.
 
+    A `timeout` in seconds is passed to the adapter (see `Adapter.complete`).
     On failure the error is logged and an `AIError` carrying the same text is raised.
     """
     row = AiCall(
@@ -216,7 +250,7 @@ def call_and_log(
     failure: Exception | None = None
     completion: Completion | None = None
     try:
-        completion = adapter_factory(cfg).complete(model, prompt)
+        completion = adapter_factory(cfg).complete(model, prompt, timeout=timeout)
     except Exception as exc:
         failure = exc
     row.duration_ms = round((time.perf_counter() - started) * 1000)
@@ -253,6 +287,7 @@ def check_model(
             prompt_name="connection_test",
             adapter_factory=adapter_factory,
             now=now,
+            timeout=CHECK_TIMEOUT_SECONDS,
         )
     except AIError as err:
         cause = err.__cause__ or err

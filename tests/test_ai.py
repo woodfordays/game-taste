@@ -3,12 +3,16 @@ import socket
 from types import SimpleNamespace
 
 import pytest
+from anthropic.resources.messages import Messages as AnthropicMessages
+from google.genai.models import Models as GeminiModels
 from markupsafe import Markup
+from openai.resources.chat.completions import Completions as OpenAICompletions
 from sqlalchemy import select
 
 from app.main import Services, default_services
 from app.models import AiCall
 from app.services.ai import (
+    CHECK_TIMEOUT_SECONDS,
     JOB_LABELS,
     MAX_OUTPUT_TOKENS,
     PROVIDER_LABELS,
@@ -222,6 +226,141 @@ def test_gemini_adapter_copes_with_no_text_or_usage():
             models=_RecordingSDK(SimpleNamespace(text=None, usage_metadata=usage))
         )
         assert adapter.complete("sample-model", "Say hi") == Completion("", None, None)
+
+
+def _openai_reply():
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="hello"))],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+
+
+def _anthropic_reply():
+    return SimpleNamespace(
+        content=[SimpleNamespace(type="text", text="hello")],
+        usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+    )
+
+
+def _gemini_reply():
+    return SimpleNamespace(
+        text="hello",
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=1, candidates_token_count=1, thoughts_token_count=None
+        ),
+    )
+
+
+# The next tests use the real SDK clients and replace only the method that would send the
+# request, so they show what timeout and retry settings that request would run with.
+
+
+def test_openai_adapter_applies_a_timeout_and_no_retries(monkeypatch):
+    seen = []
+
+    def fake_create(self, **kwargs):
+        seen.append((self._client, self._client.timeout, self._client.max_retries))
+        return _openai_reply()
+
+    monkeypatch.setattr(OpenAICompletions, "create", fake_create)
+    adapter = OpenAICompatibleAdapter("sk-sample", None)
+
+    adapter.complete("sample-model", "Say hi", timeout=12.5)
+    assert seen[-1][1:] == (12.5, 0)
+
+    # No timeout: the client's own defaults (long timeout, retries) stay in force.
+    adapter.complete("sample-model", "Say hi")
+    base = adapter._get_client()
+    assert seen[-1] == (base, base.timeout, base.max_retries)
+    assert base.max_retries > 0
+    # The shared client itself is untouched by the bounded call.
+    assert seen[0][0] is not base
+
+
+def test_anthropic_adapter_applies_a_timeout_and_no_retries(monkeypatch):
+    seen = []
+
+    def fake_create(self, **kwargs):
+        seen.append((self._client, self._client.timeout, self._client.max_retries))
+        return _anthropic_reply()
+
+    monkeypatch.setattr(AnthropicMessages, "create", fake_create)
+    adapter = AnthropicAdapter("ant-sample")
+
+    adapter.complete("sample-model", "Say hi", timeout=12.5)
+    assert seen[-1][1:] == (12.5, 0)
+
+    adapter.complete("sample-model", "Say hi")
+    base = adapter._get_client()
+    assert seen[-1] == (base, base.timeout, base.max_retries)
+    assert base.max_retries > 0
+    assert seen[0][0] is not base
+
+
+def test_gemini_adapter_applies_a_timeout_and_no_retries(monkeypatch):
+    seen = []
+
+    def fake_generate_content(self, *, model, contents, config=None):
+        seen.append(config)
+        return _gemini_reply()
+
+    monkeypatch.setattr(GeminiModels, "generate_content", fake_generate_content)
+    adapter = GeminiAdapter("gem-sample")
+
+    adapter.complete("sample-model", "Say hi", timeout=12.5)
+    options = seen[-1].http_options
+    assert options.timeout == 12500  # Gemini counts in milliseconds
+    assert options.retry_options.attempts == 1  # one attempt: no retries
+
+    # No timeout: no per-request options at all, so the client's defaults apply.
+    adapter.complete("sample-model", "Say hi")
+    assert seen[-1] is None
+
+
+def test_call_and_log_passes_the_timeout_to_the_adapter(db, fake_ai):
+    cfg = ProviderConfig(ProviderKind.OPENAI, "sk-sample", None)
+    for timeout in (None, 7):
+        call_and_log(
+            db,
+            cfg,
+            "sample-model",
+            "Say ok",
+            job=None,
+            prompt_name="sample_prompt",
+            adapter_factory=fake_ai,
+            timeout=timeout,
+        )
+    assert fake_ai.timeouts == [None, 7]
+
+
+def test_check_model_bounds_the_call_with_a_timeout(db, fake_ai):
+    assert CHECK_TIMEOUT_SECONDS == 30
+    cfg = ProviderConfig(ProviderKind.OPENAI, "sk-sample", None)
+    check_model(db, cfg, "sample-model", job=None, adapter_factory=fake_ai)
+    fake_ai.fail("broken-model", RuntimeError("down"))
+    check_model(db, cfg, "broken-model", job=None, adapter_factory=fake_ai)
+    # Failing checks are bounded too.
+    assert fake_ai.timeouts == [CHECK_TIMEOUT_SECONDS, CHECK_TIMEOUT_SECONDS]
+
+
+def test_a_timed_out_check_reads_as_a_failed_connection(db):
+    class TimesOut:
+        def __call__(self, cfg):
+            return self
+
+        def complete(self, model, prompt, *, timeout=None):
+            raise TimeoutError(f"no reply in {timeout} seconds")
+
+    result = check_model(
+        db,
+        ProviderConfig(ProviderKind.OPENAI, "sk-sample", None),
+        "sample-model",
+        job=None,
+        adapter_factory=TimesOut(),
+    )
+    assert result == CheckResult(
+        False, "Didn't connect: TimeoutError: no reply in 30 seconds"
+    )
 
 
 def test_call_and_log_success_and_failure(db, fake_ai):
