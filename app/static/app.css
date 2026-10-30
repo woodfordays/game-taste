@@ -693,11 +693,18 @@
   border-radius: var(--radius-lg);
 }
 
+/* The card clips what overflows it (the artwork's corners), so a ring drawn on the button's
+   ::after, which fills the card exactly, would be clipped away. The ring goes on the card
+   itself, outside its edge. Like Ember's controls it pairs the shadow with a transparent
+   outline, which forced-colors mode turns into a visible one (it drops box-shadows). */
 .game-card__open:focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
 
-.game-card__open:focus-visible::after {
+.game-card:has(.game-card__open:focus-visible) {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
   box-shadow: var(--focus-ring);
 }
 

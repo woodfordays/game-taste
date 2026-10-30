@@ -3,6 +3,7 @@
 import html
 import re
 from datetime import timedelta
+from pathlib import Path
 
 from app.models import Game
 from app.services.library import add_store_game, artwork_url, set_currently_playing
@@ -255,3 +256,41 @@ def test_empty_state_escapes_names(onboarded_client, db):
     add_game(db, 1, "<script>x</script>", last_played_at=FIXED_NOW)
     raw = onboarded_client.get("/").text
     assert "<script>x</script>" not in raw and "&lt;script&gt;x&lt;/script&gt;" in raw
+
+
+# --- keyboard focus -------------------------------------------------------------
+
+
+def css_rules(selector_part: str) -> list[tuple[str, str]]:
+    """The (selector, declarations) pairs in app.css whose selector contains `selector_part`."""
+    css = (Path(__file__).parent.parent / "app" / "static" / "app.css").read_text(
+        encoding="utf-8"
+    )
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    rules = re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+    return [(s.strip(), d) for s, d in rules if selector_part in s]
+
+
+def test_card_focus_ring_is_on_the_card_not_clipped():
+    # The card clips its overflow, so a ring on the stretched ::after, which fills the card
+    # exactly, would be clipped away. This only checks the rules exist; seeing the ring is
+    # a browser check.
+    assert any("overflow: hidden" in d for s, d in css_rules(".game-card") if s == ".game-card")
+    ring = [
+        (s, d)
+        for s, d in css_rules(".game-card")
+        if ":has(" in s and "focus-visible" in s
+    ]
+    assert ring, "no card-level focus rule"
+    declarations = ring[0][1]
+    assert "box-shadow: var(--focus-ring)" in declarations
+    assert "outline: 2px solid transparent" in declarations  # visible in forced-colors mode
+
+
+def test_card_focus_rules_never_remove_the_outline():
+    focus_rules = [(s, d) for s, d in css_rules(".game-card") if "focus-visible" in s]
+    assert focus_rules
+    for selector, declarations in focus_rules:
+        assert not re.search(r"outline:\s*(none|0)", declarations), selector
+    # The ::after fills the card, so a shadow there is the spot that gets clipped.
+    assert not any("box-shadow" in d for s, d in focus_rules if s.endswith("::after"))
