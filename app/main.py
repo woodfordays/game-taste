@@ -8,6 +8,11 @@ from fastapi.responses import PlainTextResponse
 
 from app.config import Paths
 from app.db import make_engine, make_session_factory, run_migrations
+from app.services.secrets import (
+    Vault,
+    load_or_create_key,
+    load_or_create_session_secret,
+)
 
 
 @dataclass
@@ -26,10 +31,14 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
 
     paths = Paths(data_dir)
     run_migrations(paths.db_path)
+    vault = Vault(load_or_create_key(paths.key_path))
+    session_secret = load_or_create_session_secret(paths.session_secret_path)
 
     app = FastAPI()
     app.state.paths = paths
     app.state.services = default_services() if services is None else services
+    app.state.vault = vault
+    app.state.session_secret = session_secret
     app.state.engine = make_engine(paths.db_path)
     app.state.session_factory = make_session_factory(app.state.engine)
 
