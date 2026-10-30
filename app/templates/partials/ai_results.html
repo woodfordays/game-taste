@@ -1,0 +1,56 @@
+{#- What a submit found: the missing details (nothing was tested), or one line per connection check.
+    Plain strings only: messages hold provider names, model names and provider error text, so they
+    go through Jinja's escaping and are never marked safe. -#}
+<div id="ai-feedback" class="ai-feedback" tabindex="-1">
+  {% if form.errors %}
+  <div class="em-alert em-alert--danger" role="alert">
+    <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
+    <div class="em-alert__content">
+      <p class="em-alert__title text-label">Some details need fixing</p>
+      <div class="em-alert__body text-body">
+        <p>Nothing was tested or saved. Fix these, then choose {{ submit_label }} again.</p>
+        <ul class="ai-errors">
+          {% for message in form.errors %}<li>{{ message }}</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  {% elif form.checks %}
+  {% if form.checks | rejectattr("result.ok") | list %}
+  <div class="em-alert em-alert--danger" role="alert">
+    <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
+    <div class="em-alert__content">
+      <p class="em-alert__title text-label">Some connections failed</p>
+      <div class="em-alert__body text-body">
+        <p>Nothing was saved. Fix the items marked below, then choose {{ submit_label }} again.</p>
+      </div>
+    </div>
+  </div>
+  {% elif form.saved %}
+  <div class="em-alert em-alert--success" role="status">
+    <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
+    <div class="em-alert__content">
+      <p class="em-alert__title text-label">Saved</p>
+      <div class="em-alert__body text-body">
+        <p>Every connection worked.</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  <ul class="ai-checks">
+    {% for line in form.checks %}
+    <li class="ai-check{% if not line.result.ok %} is-bad{% endif %}">
+      {% if line.result.ok %}
+      <svg class="em-icon ai-check__icon ai-check__icon--ok" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
+      {% else %}
+      <svg class="em-icon ai-check__icon ai-check__icon--bad" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
+      {% endif %}
+      <div class="ai-check__text">
+        <p class="ai-check__label text-label">{{ line.label }}</p>
+        <p class="ai-check__message text-caption">{{ line.result.message }}</p>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>

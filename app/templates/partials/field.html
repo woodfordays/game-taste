@@ -1,14 +1,5 @@
-{#- An Ember text field: label, input, and a hint that the error replaces. Same markup as Ember's TextField. -#}
-{% macro field(id, name, label, type="text", hint=none, error=none, autocomplete=none, autofocus=false) %}
-<div class="em-field">
-  <label for="{{ id }}" class="em-field__label text-label">{{ label }}</label>
-  <div class="em-input em-input--md{% if error %} is-invalid{% endif %}">
-    <input id="{{ id }}" name="{{ name }}" type="{{ type }}" class="em-input__control text-body" required
-      {%- if autocomplete %} autocomplete="{{ autocomplete }}"{% endif %}
-      {%- if autofocus %} autofocus{% endif %}
-      {%- if error %} aria-invalid="true" aria-describedby="{{ id }}-error"
-      {%- elif hint %} aria-describedby="{{ id }}-hint"{% endif %}>
-  </div>
+{#- The line under a field: the error if there is one, else the hint. Same markup as Ember's field chrome. -#}
+{% macro field_help(id, hint, error) %}
   {% if error %}
   <p id="{{ id }}-error" class="em-field__error text-caption">
     <svg class="em-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
@@ -17,5 +8,47 @@
   {% elif hint %}
   <p id="{{ id }}-hint" class="em-field__hint text-caption">{{ hint }}</p>
   {% endif %}
+{% endmacro %}
+
+{#- An Ember text field: label, input, and a hint that the error replaces. Same markup as Ember's TextField.
+    `value` and `placeholder` are shown as given. `required=false` goes with `optional=true`, which puts
+    "Optional" beside the label. `mono` sets the value in the mono face, for keys and IDs. -#}
+{% macro field(id, name, label, type="text", hint=none, error=none, autocomplete=none, autofocus=false, value=none, placeholder=none, required=true, optional=false, mono=false) %}
+<div class="em-field">
+  <label for="{{ id }}" class="em-field__label text-label">{{ label }}{% if optional %}<span class="em-field__optional text-caption">Optional</span>{% endif %}</label>
+  <div class="em-input em-input--md{% if error %} is-invalid{% endif %}">
+    <input id="{{ id }}" name="{{ name }}" type="{{ type }}" class="em-input__control {{ 'text-code' if mono else 'text-body' }}"
+      {%- if required %} required{% endif %}
+      {%- if value %} value="{{ value }}"{% endif %}
+      {%- if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+      {%- if autocomplete %} autocomplete="{{ autocomplete }}"{% endif %}
+      {%- if autofocus %} autofocus{% endif %}
+      {%- if error %} aria-invalid="true" aria-describedby="{{ id }}-error"
+      {%- elif hint %} aria-describedby="{{ id }}-hint"{% endif %}>
+  </div>
+  {{ field_help(id, hint, error) }}
+</div>
+{% endmacro %}
+
+{#- An Ember select: the platform's own option list in Ember chrome. `options` is a list of (value, label).
+    With a `placeholder`, the first option is empty and disabled, and shows until a value is picked. -#}
+{% macro select_field(id, name, label, options, selected=none, placeholder=none, hint=none, error=none, required=false) %}
+<div class="em-field">
+  <label for="{{ id }}" class="em-field__label text-label">{{ label }}</label>
+  <div class="em-input em-select em-input--md{% if error %} is-invalid{% endif %}">
+    <select id="{{ id }}" name="{{ name }}" class="em-input__control text-body"
+      {%- if required %} required{% endif %}
+      {%- if error %} aria-invalid="true" aria-describedby="{{ id }}-error"
+      {%- elif hint %} aria-describedby="{{ id }}-hint"{% endif %}>
+      {%- if placeholder %}
+      <option value="" disabled{% if not selected %} selected{% endif %}>{{ placeholder }}</option>
+      {%- endif %}
+      {%- for option_value, option_label in options %}
+      <option value="{{ option_value }}"{% if option_value == selected %} selected{% endif %}>{{ option_label }}</option>
+      {%- endfor %}
+    </select>
+    <svg class="em-icon em-select__chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 9.5l5.5 5.5 5.5-5.5"/></svg>
+  </div>
+  {{ field_help(id, hint, error) }}
 </div>
 {% endmacro %}

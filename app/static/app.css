@@ -69,3 +69,191 @@
   flex-direction: column;
   gap: var(--space-5);
 }
+
+/* Links: ink text underlined in ember, never ember-colored text (Ember's rule). */
+.app-link {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--ember);
+  text-underline-offset: 3px;
+}
+
+.app-link .em-icon {
+  vertical-align: -2px;
+  margin-left: 2px;
+}
+
+/* A taller onboarding step starts at the top, so adding a row doesn't move what is above it. */
+.auth-page--top {
+  align-items: flex-start;
+}
+
+.auth-panel--wide {
+  max-width: 720px;
+}
+
+/* The "Connect your AI" form: onboarding step 2 and Settings. */
+.ai-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.ai-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ai-section + .ai-section {
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--line);
+}
+
+.ai-section__titles,
+.ai-job__titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ai-section__titles > *,
+.ai-job__titles > *,
+.ai-search-link,
+.ai-provider__name {
+  margin: 0;
+}
+
+.ai-section__lede,
+.ai-job__hint,
+.ai-search-link__note {
+  color: var(--ink-muted);
+}
+
+.ai-providers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ai-providers:empty {
+  display: none;
+}
+
+.ai-provider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.ai-provider__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ai-add {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.ai-add .em-field {
+  flex: 1;
+  max-width: 280px;
+}
+
+.ai-job {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ai-job__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--space-3);
+}
+
+@media (max-width: 560px) {
+  .ai-job__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.ai-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ai-errors {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+
+.ai-checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.ai-check__icon {
+  flex: none;
+}
+
+.ai-check__icon--ok {
+  color: var(--success);
+}
+
+.ai-check__icon--bad {
+  color: var(--danger);
+}
+
+.ai-check__text {
+  min-width: 0;
+}
+
+.ai-check__text > * {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-check__message {
+  color: var(--ink-muted);
+}
+
+.ai-check.is-bad .ai-check__message {
+  color: var(--danger);
+}
+
+.ai-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* htmx adds .htmx-request to the form while it waits, which reveals the note. */
+.htmx-indicator.ai-testing {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-muted);
+}
+
+.htmx-request .htmx-indicator.ai-testing {
+  display: inline-flex;
+}

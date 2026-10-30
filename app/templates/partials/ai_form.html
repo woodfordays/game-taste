@@ -1,0 +1,71 @@
+{#- The "Connect your AI" form, shared by onboarding step 2 and Settings.
+    Context: `mode` ("onboarding" or "settings"), `form_action` (where it posts), `form` (an AiFormView) and
+    optionally `row_url` (where "Add provider" fetches a row; defaults to `form_action` + "/provider-row").
+    A submit swaps this whole form, so it carries its own errors and check results. -#}
+{% from "partials/field.html" import field, select_field %}
+{% set row_url = row_url | default(form_action ~ "/provider-row") %}
+{% set onboarding = mode != "settings" %}
+{% set submit_label = "Test and continue" if onboarding else "Test and save" %}
+<form id="ai-form" class="ai-form" method="post" action="{{ form_action }}"
+  hx-post="{{ form_action }}" hx-target="#ai-form" hx-swap="outerHTML show:#ai-feedback:top" hx-disabled-elt="#ai-submit">
+
+  <section class="ai-section" aria-labelledby="ai-providers-title">
+    <div class="ai-section__titles">
+      <h2 id="ai-providers-title" class="text-title">Add the providers you'll use</h2>
+      <p class="text-body ai-section__lede">Add each provider once. Local needs a server URL. The others need an API key.</p>
+    </div>
+    <div id="provider-rows" class="ai-providers">
+      {% for row in form.rows %}{% include "partials/provider_row.html" %}{% endfor %}
+    </div>
+    <div class="ai-add">
+      {{ select_field("add-provider", "kind", "Add a provider", form.provider_options) }}
+      {#- A provider already in the form isn't added twice: the request is cancelled and its row gets the focus. -#}
+      <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"
+        hx-get="{{ row_url }}" hx-include="#add-provider" hx-target="#provider-rows" hx-swap="beforeend"
+        hx-on::before-request="var row = document.getElementById('provider-' + document.getElementById('add-provider').value); if (row) { event.preventDefault(); var input = row.querySelector('input:not([type=hidden])'); if (input) input.focus(); }"><span class="em-btn__label">Add provider</span></button>
+    </div>
+  </section>
+
+  <section class="ai-section" aria-labelledby="ai-jobs-title">
+    <div class="ai-section__titles">
+      <h2 id="ai-jobs-title" class="text-title">Choose a model for each job</h2>
+      <p class="text-body ai-section__lede">Pick a provider you added above, then type the model name exactly as that provider lists it.</p>
+    </div>
+    {% for job in form.jobs %}
+    <div class="ai-job">
+      <div class="ai-job__titles">
+        <h3 class="text-subtitle">{{ job.label }}</h3>
+        <p class="text-caption ai-job__hint">{{ job.hint }}</p>
+      </div>
+      <div class="ai-job__fields">
+        {{ select_field("job-" ~ job.job.value ~ "-provider", "job_" ~ job.job.value ~ "_provider", "Provider", form.provider_options, selected=job.provider.value if job.provider else none, placeholder="Choose a provider", required=true) }}
+        {{ field("job-" ~ job.job.value ~ "-model", "job_" ~ job.job.value ~ "_model", "Model", value=job.model, mono=true, autocomplete="off") }}
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="ai-section" aria-labelledby="ai-search-title">
+    <div class="ai-section__titles">
+      <h2 id="ai-search-title" class="text-title">Add a web search key</h2>
+      <p class="text-body ai-section__lede">Game research searches the web through Tavily, so every recommendation needs this key.</p>
+    </div>
+    {#- new-password keeps browsers from filling the login password into a key field. -#}
+    {{ field("tavily-key", "tavily_key", "Tavily API key", type="password", value=form.tavily.value, placeholder=form.tavily.saved, error=form.tavily.error, autocomplete="new-password", required=false, mono=true) }}
+    <p class="text-caption ai-search-link">
+      <a href="https://app.tavily.com" target="_blank" rel="noopener" class="app-link">Where do I get a key?
+        <svg class="em-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 4.5h5.5V10"/><path d="M19.5 4.5L11 13"/><path d="M17.5 14v3.5a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2H10"/></svg></a>
+      <span class="ai-search-link__note">Opens in a new tab.</span>
+    </p>
+  </section>
+
+  {% if form.errors or form.checks %}{% include "partials/ai_results.html" %}{% endif %}
+
+  <div class="ai-actions">
+    <button id="ai-submit" type="submit" class="em-btn {{ 'em-btn--primary' if onboarding else 'em-btn--secondary' }} em-btn--md text-label"><span class="em-btn__label">{{ submit_label }}</span></button>
+    <span class="htmx-indicator ai-testing text-caption" role="status">
+      <span class="em-spinner em-spinner--ember" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2.5"><circle class="em-spinner__track" cx="12" cy="12" r="9"/><path class="em-spinner__arc" d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>
+      <span>Testing connections... Each check can take up to 30 seconds.</span>
+    </span>
+  </div>
+</form>

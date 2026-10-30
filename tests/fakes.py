@@ -87,3 +87,20 @@ class FakeSearchFactory:
 
     def fail(self, exc: Exception) -> None:
         self.failure = exc
+
+
+# A complete, valid "Connect your AI" form: two providers, three jobs and a Tavily key.
+# Local needs no key, so `key_local` is empty. Shared by the onboarding and Settings tests.
+VALID = {
+    "providers": ["anthropic", "local"],
+    "key_anthropic": "ant-sample",
+    "url_local": "http://localhost:1234/v1",
+    "key_local": "",
+    "job_recommender_provider": "anthropic",
+    "job_recommender_model": "sample-big",
+    "job_judge_provider": "local",
+    "job_judge_model": "sample-local",
+    "job_everyday_provider": "local",
+    "job_everyday_model": "sample-local",
+    "tavily_key": "tvly-sample",
+}

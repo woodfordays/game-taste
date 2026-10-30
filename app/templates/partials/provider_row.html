@@ -1,0 +1,16 @@
+{#- One provider's inputs in the AI form. `row` is a ProviderRow. The hidden `providers` input is how the server
+    learns the row exists. Removing a row only removes it from the form; nothing saved is deleted. -#}
+{% from "partials/field.html" import field %}
+{% set local = row.kind.value == "local" %}
+<div id="provider-{{ row.kind.value }}" class="ai-provider" data-provider-row>
+  <input type="hidden" name="providers" value="{{ row.kind.value }}">
+  <div class="ai-provider__head">
+    <h3 class="text-subtitle ai-provider__name">{{ row.label }}</h3>
+    <button type="button" class="em-btn em-btn--ghost em-btn--sm text-label" aria-label="Remove {{ row.label }}" onclick="this.closest('[data-provider-row]').remove()"><span class="em-btn__label">Remove</span></button>
+  </div>
+  {% if local %}
+  {{ field("url-local", "url_local", "Server URL", type="url", value=row.url, placeholder="http://localhost:1234/v1", hint="Most local servers end in /v1.", autocomplete="off", mono=true) }}
+  {% endif %}
+  {#- new-password keeps browsers from filling the login password into a key field. -#}
+  {{ field("key-" ~ row.kind.value, "key_" ~ row.kind.value, "API key", type="password", value=row.key.value, placeholder=row.key.saved, error=row.key.error, hint=("Leave this empty if your server doesn't need a key." if local else none), autocomplete="new-password", required=false, optional=local, mono=true) }}
+</div>

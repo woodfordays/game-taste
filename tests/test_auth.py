@@ -404,13 +404,21 @@ def test_htmx_outside_onboarding_redirects_whole_page(logged_in_client):
     assert r.status_code == 200 and r.headers["HX-Redirect"] == "/onboarding/ai"
 
 
-def test_current_and_earlier_steps_stay_reachable(logged_in_client, db):
+def test_current_and_earlier_steps_stay_reachable(app, logged_in_client, db):
     advance_step(db, "people")
-    # No page exists for these yet (later tasks add them), so a pass-through is a 404.
-    for path in ("/onboarding/ai", "/onboarding/steam", "/onboarding/people"):
+    # Probe routes under each step's path, so the test doesn't depend on which step pages
+    # exist yet. A probe answers only if the guard let the request through.
+    for step in ("ai", "steam", "people"):
+
+        @app.get(f"/onboarding/{step}/_probe")
+        def probe() -> str:
+            return "reached"
+
+    for step in ("ai", "steam", "people"):
+        path = f"/onboarding/{step}/_probe"
         r = logged_in_client.get(path, follow_redirects=False)
         assert "location" not in r.headers, path
-        assert r.status_code == 404, path
+        assert r.status_code == 200 and r.json() == "reached", path
 
 
 def test_later_steps_redirect_to_the_current_step(logged_in_client, db):
@@ -457,10 +465,15 @@ def test_finished_user_leaves_onboarding_and_login_alone(onboarded_client):
         assert r.headers["location"] == "/", path
 
 
-def test_finished_user_reaches_other_pages(onboarded_client):
-    # Nothing is mounted at /library yet; a 404 means the guard let the request through.
-    r = onboarded_client.get("/library", follow_redirects=False)
-    assert r.status_code == 404 and "location" not in r.headers
+def test_finished_user_reaches_other_pages(app, onboarded_client):
+    # A probe route outside onboarding answers only if the guard let the request through.
+    @app.get("/library/_probe")
+    def probe() -> str:
+        return "reached"
+
+    r = onboarded_client.get("/library/_probe", follow_redirects=False)
+    assert r.status_code == 200 and r.json() == "reached"
+    assert "location" not in r.headers
 
 
 def test_htmx_finished_user_on_onboarding_url_goes_home(onboarded_client):

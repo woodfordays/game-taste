@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Connect your AI - Game Taste{% endblock %}
+{% block shell %}
+<main class="auth-page auth-page--top">
+  <div class="auth-panel auth-panel--wide">
+    <p class="text-eyebrow auth-eyebrow">Step 2 of 5</p>
+    <h1 class="text-display">Connect your AI</h1>
+    <p class="text-body-lg auth-lede">Game Taste asks AI models to suggest and check games, and searches the web to research them. Add the providers you'll use, choose which model does each job, and test the connections. Keys are saved encrypted, and you can change any of this later in Settings.</p>
+    <div class="em-card">
+      <div class="em-card__body">
+        {% include "partials/ai_form.html" %}
+      </div>
+    </div>
+  </div>
+</main>
+{% endblock %}

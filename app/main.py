@@ -11,6 +11,7 @@ from app.auth import install_auth
 from app.config import Paths
 from app.db import make_engine, make_session_factory, run_migrations
 from app.routes import auth as auth_routes
+from app.routes import onboarding as onboarding_routes
 from app.services.ai import Adapter, ProviderConfig, make_adapter
 from app.services.search import SearchClient, make_search_client
 from app.services.secrets import (
@@ -64,6 +65,7 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
         return "ok"
 
     app.include_router(auth_routes.router)
+    app.include_router(onboarding_routes.router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     return app
