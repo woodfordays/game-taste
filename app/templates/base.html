@@ -10,6 +10,7 @@
   <script src="/static/vendor/htmx.min.js" defer></script>
 </head>
 <body hx-headers='{"HX-Request": "true"}'>
+  {% block shell %}
   <div class="app-shell">
     <nav class="em-sidenav" aria-label="Main">
       <div class="em-sidenav__header">
@@ -41,11 +42,13 @@
       </div>
     </main>
   </div>
+  {% endblock %}
   <div id="dialog"></div>
   <div id="toasts" class="em-toast-region" aria-live="polite" aria-relevant="additions"></div>
   <script>
     (function () {
       var button = document.getElementById("theme-toggle");
+      if (!button) return; // Pages that replace the shell block, such as login, have no toggle.
       button.addEventListener("click", function () {
         var next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
         document.documentElement.dataset.theme = next;

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "partials/field.html" import field %}
+{% block title %}Log in - Game Taste{% endblock %}
+{% block shell %}
+<main class="auth-page">
+  <div class="auth-panel">
+    <p class="text-subtitle">Game Taste</p>
+    <h1 class="text-headline">Welcome back</h1>
+    <p class="text-body-lg auth-lede">Enter your password to open your library.</p>
+    <form method="post" action="/login" class="em-card">
+      <div class="em-card__body auth-form">
+        {{ field("password", "password", "Password", type="password", error=error, autocomplete="current-password", autofocus=true) }}
+        <button type="submit" class="em-btn em-btn--primary em-btn--md em-btn--block text-label"><span class="em-btn__label">Log in</span></button>
+      </div>
+    </form>
+  </div>
+</main>
+{% endblock %}

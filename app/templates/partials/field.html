@@ -1,0 +1,21 @@
+{#- An Ember text field: label, input, and a hint that the error replaces. Same markup as Ember's TextField. -#}
+{% macro field(id, name, label, type="text", hint=none, error=none, autocomplete=none, autofocus=false) %}
+<div class="em-field">
+  <label for="{{ id }}" class="em-field__label text-label">{{ label }}</label>
+  <div class="em-input em-input--md{% if error %} is-invalid{% endif %}">
+    <input id="{{ id }}" name="{{ name }}" type="{{ type }}" class="em-input__control text-body" required
+      {%- if autocomplete %} autocomplete="{{ autocomplete }}"{% endif %}
+      {%- if autofocus %} autofocus{% endif %}
+      {%- if error %} aria-invalid="true" aria-describedby="{{ id }}-error"
+      {%- elif hint %} aria-describedby="{{ id }}-hint"{% endif %}>
+  </div>
+  {% if error %}
+  <p id="{{ id }}-error" class="em-field__error text-caption">
+    <svg class="em-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
+    <span>{{ error }}</span>
+  </p>
+  {% elif hint %}
+  <p id="{{ id }}-hint" class="em-field__hint text-caption">{{ hint }}</p>
+  {% endif %}
+</div>
+{% endmacro %}

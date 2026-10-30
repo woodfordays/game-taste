@@ -7,7 +7,6 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from conftest import FIXED_NOW
 from fastapi import Depends
-from fastapi.testclient import TestClient
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
@@ -272,9 +271,12 @@ def test_naive_datetimes_are_rejected(db):
         db.commit()
 
 
-def test_get_db_gives_a_session_in_a_request(app):
+def test_get_db_gives_a_session_in_a_request(app, onboarded_client, db):
     @app.get("/_probe")
     def probe(session: Session = Depends(get_db)) -> int:
         return session.scalar(select(func.count()).select_from(Setting))
 
-    assert TestClient(app).get("/_probe").json() == 0
+    # Logging in saved some settings, so compare with a count taken outside the request.
+    expected = db.scalar(select(func.count()).select_from(Setting))
+    assert expected > 0
+    assert onboarded_client.get("/_probe").json() == expected

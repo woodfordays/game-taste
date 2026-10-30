@@ -7,13 +7,16 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.auth import install_auth
 from app.config import Paths
 from app.db import make_engine, make_session_factory, run_migrations
+from app.routes import auth as auth_routes
 from app.services.secrets import (
     Vault,
     load_or_create_key,
     load_or_create_session_secret,
 )
+from app.services.settings import delete_setting
 from app.web import STATIC_DIR
 
 
@@ -44,10 +47,19 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
     app.state.engine = make_engine(paths.db_path)
     app.state.session_factory = make_session_factory(app.state.engine)
 
+    if paths.reset_flag_path.exists():
+        # Forgot the password: drop it, keep everything else, and ask for a new one.
+        with app.state.session_factory() as db:
+            delete_setting(db, "password_hash")
+        paths.reset_flag_path.unlink(missing_ok=True)
+
+    install_auth(app)
+
     @app.get("/healthz", response_class=PlainTextResponse)
     def healthz() -> str:
         return "ok"
 
+    app.include_router(auth_routes.router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     return app
