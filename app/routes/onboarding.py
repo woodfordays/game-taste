@@ -19,7 +19,7 @@ from app.services.ai_setup import (
 )
 from app.services.library import connect_steam
 from app.services.steam import SteamClient, SteamError
-from app.web import redirect, render
+from app.web import is_htmx, read_form, redirect, render
 
 router = APIRouter()
 
@@ -29,19 +29,6 @@ PEOPLE_PATH = "/onboarding/people"
 
 KEY_MISSING = "Enter your Steam Web API key."
 PROFILE_MISSING = "Enter your Steam profile link or SteamID64."
-
-
-async def read_form(request: Request) -> FormData:
-    """The posted form. Read here so the route itself can be a plain function.
-
-    The connection checks block for up to a minute or more, so the route has to run in a
-    worker thread; an `async def` route would hold up the whole server.
-    """
-    return await request.form()
-
-
-def _is_htmx(request: Request) -> bool:
-    return request.headers.get("hx-request") == "true"
 
 
 def _ai_response(
@@ -55,7 +42,7 @@ def _ai_response(
     """The page, or just the form when htmx will swap it in. Always status 200:
     htmx doesn't swap an error status, and the form carries the errors itself.
     """
-    template = "partials/ai_form.html" if _is_htmx(request) else "onboarding/ai.html"
+    template = "partials/ai_form.html" if is_htmx(request) else "onboarding/ai.html"
     return render(
         request,
         template,
@@ -127,7 +114,7 @@ def _steam_response(
     AI step: htmx doesn't swap an error status, and the form carries the errors itself.
     """
     template = (
-        "partials/steam_form.html" if _is_htmx(request) else "onboarding/steam.html"
+        "partials/steam_form.html" if is_htmx(request) else "onboarding/steam.html"
     )
     return render(
         request,

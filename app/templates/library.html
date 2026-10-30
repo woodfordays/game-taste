@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "partials/field.html" import field, select_field %}
+{% from "partials/toast.html" import toast_item %}
+{#- The Library page. Context: `games`, `q` and `sort` (the filters, shown back in their fields), `connected` (Steam key and
+    ID are saved) and `toast`, which a re-sync or an add sets when the page comes back as a whole rather than as a fragment. -#}
+{% block title %}Library - Game Taste{% endblock %}
+{% block toasts %}{% if toast %}{{ toast_item(toast.message, toast.tone) }}{% endif %}{% endblock %}
+{% block content %}
+<div class="library-head">
+  <h1 class="text-headline">Library</h1>
+  {% if connected %}
+  <div class="library-head__actions">
+    <p id="library-syncing" class="htmx-indicator library-syncing text-caption" role="status">
+      <span class="em-spinner em-spinner--ember" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2.5"><circle class="em-spinner__track" cx="12" cy="12" r="9"/><path class="em-spinner__arc" d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>
+      <span>Syncing your library...</span>
+    </p>
+    <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"
+      hx-post="/library/sync" hx-include="#library-filters" hx-target="#library-list" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator="#library-syncing">
+      <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3L19.5 9"/><path d="M19.5 4.5V9H15"/></svg>
+      <span class="em-btn__label">Re-sync library</span>
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+{% if not connected %}
+<div class="em-alert em-alert--info library-alert" role="status">
+  <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.9" r="0.55"/></svg>
+  <div class="em-alert__content">
+    <p class="em-alert__title text-label">Steam isn't connected</p>
+    <div class="em-alert__body text-body">
+      <p>Connect Steam in Settings to import your library.</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{#- A summary styled as a button opens the panel with no script. The Search button is the one primary action on the page, so it shows only while the panel is open. -#}
+<details class="library-add">
+  <summary class="em-btn em-btn--secondary em-btn--md text-label">
+    <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg>
+    <span class="em-btn__label">Add a game</span>
+  </summary>
+  <div class="library-add__panel em-card">
+    <div class="em-card__body library-add__body">
+      <p class="text-body library-add__lede">Search the Steam store for a game you don't own, such as one you played with a friend. It joins your list so you can review it.</p>
+      <form class="library-add__form" hx-get="/library/search" hx-target="#store-results" hx-swap="innerHTML" hx-disabled-elt="find button" hx-indicator="#store-searching">
+        {{ field("store-term", "term", "Game name", autocomplete="off", hint="Part of the name is enough.") }}
+        <button type="submit" class="em-btn em-btn--primary em-btn--md text-label"><span class="em-btn__label">Search Steam</span></button>
+      </form>
+      <p id="store-searching" class="htmx-indicator library-searching text-caption" role="status">
+        <span class="em-spinner em-spinner--ember" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2.5"><circle class="em-spinner__track" cx="12" cy="12" r="9"/><path class="em-spinner__arc" d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>
+        <span>Searching the Steam store...</span>
+      </p>
+      <div id="store-results" class="store-results" aria-live="polite"></div>
+    </div>
+  </div>
+</details>
+
+<form id="library-filters" class="library-filters" hx-get="/library" hx-target="#library-list" hx-swap="outerHTML"
+  hx-trigger="input changed delay:250ms from:#library-q, change from:#library-sort, submit" hx-sync="this:replace">
+  {{ field("library-q", "q", "Search your library", type="search", value=q, required=false, autocomplete="off") }}
+  {{ select_field("library-sort", "sort", "Sort by", [("hours", "Most played"), ("last_played", "Recently played"), ("name", "Name")], selected=sort) }}
+</form>
+
+{% include "partials/library_list.html" %}
+{% endblock %}

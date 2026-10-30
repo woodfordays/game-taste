@@ -44,7 +44,7 @@
   </div>
   {% endblock %}
   <div id="dialog"></div>
-  <div id="toasts" class="em-toast-region" aria-live="polite" aria-relevant="additions"></div>
+  <div id="toasts" class="em-toast-region" aria-live="polite" aria-relevant="additions">{% block toasts %}{% endblock %}</div>
   <script>
     (function () {
       var button = document.getElementById("theme-toggle");

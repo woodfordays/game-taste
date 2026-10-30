@@ -1,0 +1,42 @@
+{#- The Steam store search results inside "Add a game". Context: `term` (what was searched, quoted back), `hits` (store hits),
+    `known` (the app ids of the hits already in the library), `notice` (a plain nudge, such as an empty search) and `error`
+    (what Steam said, a plain string). Every value is escaped: store names and the term can hold anything. -#}
+
+{#- One hit: its name, then an Add button, or a badge once the game is in the library. Adding a game answers with this row
+    again (`oob`), so the button turns into the badge in place. -#}
+{% macro hit_row(appid, name, in_library, oob=false) -%}
+<li id="store-hit-{{ appid }}" class="store-hit"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <span class="store-hit__name text-body">{{ name }}</span>
+  {% if in_library -%}
+  <span class="em-badge em-badge--neutral text-caption">In your library</span>
+  {%- else -%}
+  <form hx-post="/library/games" hx-include="#library-filters" hx-target="#library-list" hx-swap="outerHTML" hx-disabled-elt="find button">
+    <input type="hidden" name="appid" value="{{ appid }}">
+    <input type="hidden" name="name" value="{{ name }}">
+    <button type="submit" class="em-btn em-btn--secondary em-btn--sm text-label" aria-label="Add {{ name }}"><span class="em-btn__label">Add</span></button>
+  </form>
+  {%- endif %}
+</li>
+{%- endmacro %}
+
+{% if error %}
+<div class="em-alert em-alert--danger" role="alert">
+  <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
+  <div class="em-alert__content">
+    <p class="em-alert__title text-label">Steam search failed</p>
+    <div class="em-alert__body text-body">
+      <p>{{ error }}</p>
+    </div>
+  </div>
+</div>
+{% elif notice %}
+<p class="store-notice text-caption">{{ notice }}</p>
+{% elif not hits %}
+<p class="store-notice text-body">No games found for "{{ term }}". Check the spelling or try fewer words.</p>
+{% else %}
+<ul class="store-hits">
+  {%- for hit in hits %}
+  {{ hit_row(hit.appid, hit.name, hit.appid in known) }}
+  {%- endfor %}
+</ul>
+{% endif %}

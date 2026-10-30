@@ -1,0 +1,31 @@
+{#- One game in the Library list. Context: `game`. The switch posts the opposite of what it shows, and the answer is this row
+    again, so the next toggle is computed from the state the server saved. `hx-sync` drops a second click while the first is
+    in flight rather than disabling the switch, which would drop keyboard focus. -#}
+<li id="game-{{ game.appid }}" class="library-row">
+  <img class="library-row__art" src="{{ artwork_url(game.appid) }}" alt="" width="120" height="56" loading="lazy" referrerpolicy="no-referrer">
+  <div class="library-row__main">
+    <p id="game-name-{{ game.appid }}" class="library-row__name text-subtitle">{{ game.name }}</p>
+    <p class="library-row__meta text-caption">
+      <span>{{ game.playtime_minutes | hours }}</span>
+      <span>{% if game.last_played_at %}Last played {{ game.last_played_at | when }}{% else %}Never played{% endif %}</span>
+      {%- if not game.owned %}
+      <span class="em-badge em-badge--neutral em-badge--sm text-caption">Not owned</span>
+      {%- endif %}
+    </p>
+  </div>
+  <div class="library-row__actions">
+    <div class="em-switch">
+      <input id="playing-{{ game.appid }}" type="checkbox" role="switch" class="em-switch__track" aria-describedby="game-name-{{ game.appid }}"
+        {%- if game.currently_playing %} checked{% endif %}
+        hx-post="/games/{{ game.appid }}/playing" hx-vals='{"playing": "{{ 0 if game.currently_playing else 1 }}"}'
+        hx-trigger="change" hx-target="#game-{{ game.appid }}" hx-swap="outerHTML" hx-sync="this:drop">
+      <span class="em-switch__text">
+        <label for="playing-{{ game.appid }}" class="em-switch__label text-body">Currently playing</label>
+      </span>
+    </div>
+    <button type="button" class="em-btn em-btn--secondary em-btn--md text-label" aria-label="Write a review for {{ game.name }}"
+      hx-get="/games/{{ game.appid }}/review" hx-target="#dialog">
+      <span class="em-btn__label">Write a review</span>
+    </button>
+  </div>
+</li>

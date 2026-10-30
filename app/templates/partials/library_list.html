@@ -1,0 +1,28 @@
+{#- The Library list: the count, then the rows or an empty state. Filtering, re-sync and adding a game each swap this whole block.
+    Context: `games`, `q` (the search text, shown back in the empty state), `toast` (a message and tone, or none), `added`
+    (the store hit just added: an app id and a name, or none) and `oob`. With `oob` set, the toast and the added hit's row ride
+    along as out-of-band swaps, into #toasts and into the open search results; the full page puts the toast there itself. -#}
+{% from "partials/toast.html" import toast_item %}
+{% from "partials/store_results.html" import hit_row %}
+<div id="library-list">
+  <p class="library-count text-caption">{{ games | length }} {{ "game" if games | length == 1 else "games" }}</p>
+  {% if games %}
+  <ul class="library-rows">
+    {%- for game in games %}
+    {% include "partials/library_row.html" %}
+    {%- endfor %}
+  </ul>
+  {% elif q.strip() %}
+  <div class="em-empty">
+    <h2 class="em-empty__title text-title">No games match "{{ q.strip() }}"</h2>
+    <p class="em-empty__desc text-body-lg">Check the spelling or try a shorter search.</p>
+  </div>
+  {% else %}
+  <div class="em-empty">
+    <h2 class="em-empty__title text-title">No games yet</h2>
+    <p class="em-empty__desc text-body-lg">Games you import from Steam or add by name appear here.</p>
+  </div>
+  {% endif %}
+</div>
+{% if toast and oob %}{{ toast_item(toast.message, toast.tone, oob=true) }}{% endif %}
+{% if added and oob %}{{ hit_row(added.appid, added.name, true, oob=true) }}{% endif %}

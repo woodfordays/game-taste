@@ -1,18 +1,22 @@
 """The game library: connecting to Steam, syncing from it, and the artwork for each game."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from cryptography.fernet import InvalidToken
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Game, PlaytimeSnapshot
+from app.models import CurrentlyPlayingChange, Game, PlaytimeSnapshot, Review
 from app.services.secrets import Vault
-from app.services.settings import set_secret, set_setting
+from app.services.settings import get_secret, get_setting, set_secret, set_setting
 from app.services.steam import SteamClient
 
 STEAM_KEY_SETTING = "steam_api_key"
 STEAM_ID_SETTING = "steam_id"
+
+SOURCE_STORE_SEARCH = "store_search"
 
 
 @dataclass
@@ -92,6 +96,121 @@ def connect_steam(
     set_secret(db, vault, STEAM_KEY_SETTING, api_key)
     set_setting(db, STEAM_ID_SETTING, steamid)
     return result
+
+
+def steam_credentials(db: Session, vault: Vault) -> tuple[str, str] | None:
+    """The saved Steam API key and SteamID64, or None when Steam isn't connected.
+
+    A key that can't be decrypted, such as one saved under another key file, counts
+    as not connected: the user has to enter it again either way.
+    """
+    try:
+        api_key = get_secret(db, vault, STEAM_KEY_SETTING)
+    except InvalidToken:
+        return None
+    steamid = get_setting(db, STEAM_ID_SETTING)
+    if not api_key or not steamid:
+        return None
+    return api_key, steamid
+
+
+def _by_name(game: Game) -> tuple[str, int]:
+    return (game.name.casefold(), game.appid)
+
+
+def _by_hours(game: Game) -> tuple:
+    played = game.playtime_minutes
+    return (played is None, -(played or 0), *_by_name(game))
+
+
+def _by_last_played(game: Game) -> tuple:
+    last = game.last_played_at
+    return (last is None, -last.timestamp() if last else 0, *_by_name(game))
+
+
+# Each key puts a game with no value last and breaks ties by name.
+SORT_KEYS: dict[str, Callable[[Game], tuple]] = {
+    "hours": _by_hours,
+    "last_played": _by_last_played,
+    "name": _by_name,
+}
+
+
+def list_library(db: Session, q: str = "", sort: str = "hours") -> list[Game]:
+    """The games the Library page lists, from one query.
+
+    These are the owned games, the ones currently playing, the ones with any review,
+    and the ones added by name (`add_store_game`), which would otherwise vanish before
+    they are played or reviewed. `q` keeps the games whose name contains it, ignoring
+    case and the spaces around it. `sort` is "hours" (most played first), "last_played"
+    (latest first) or "name"; a game with no value for the sort comes last. Raises
+    `ValueError` for any other sort.
+
+    Matching and ordering happen here rather than in SQL because SQLite folds only
+    ASCII letters: "Über" would not match "über".
+    """
+    if sort not in SORT_KEYS:
+        raise ValueError(f"Unknown sort: {sort!r}")
+    reviewed = select(Review.id).where(Review.appid == Game.appid).exists()
+    games = list(
+        db.scalars(
+            select(Game).where(
+                or_(
+                    Game.owned.is_(True),
+                    Game.currently_playing.is_(True),
+                    Game.source == SOURCE_STORE_SEARCH,
+                    reviewed,
+                )
+            )
+        )
+    )
+    needle = q.strip().casefold()
+    if needle:
+        games = [game for game in games if needle in game.name.casefold()]
+    return sorted(games, key=SORT_KEYS[sort])
+
+
+def set_currently_playing(
+    db: Session, appid: int, playing: bool, now: datetime
+) -> bool:
+    """Switch "Currently playing" for a game and record the change.
+
+    Returns False, writing nothing, when the game is already in that state. Raises
+    `LookupError` for an app id that isn't in the library.
+    """
+    game = db.get(Game, appid)
+    if game is None:
+        raise LookupError(f"No game with app id {appid}")
+    if game.currently_playing == playing:
+        return False
+    game.currently_playing = playing
+    db.add(CurrentlyPlayingChange(appid=appid, playing=playing, changed_at=now))
+    db.commit()
+    return True
+
+
+def add_store_game(db: Session, appid: int, name: str, now: datetime) -> Game:
+    """Add a game found in the Steam store, for one the user doesn't own.
+
+    A game that is already known is returned as it is. A new one has no playtime
+    (None, not 0), so the first Steam sync that finds it owned records its first
+    snapshot.
+    """
+    game = db.get(Game, appid)
+    if game is None:
+        game = Game(
+            appid=appid,
+            name=name,
+            owned=False,
+            playtime_minutes=None,
+            last_played_at=None,
+            currently_playing=False,
+            source=SOURCE_STORE_SEARCH,
+            created_at=now,
+        )
+        db.add(game)
+    db.commit()
+    return game
 
 
 def _snapshot(

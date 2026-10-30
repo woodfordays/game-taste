@@ -300,3 +300,200 @@
 .htmx-request .htmx-indicator.steam-importing {
   display: flex;
 }
+
+/* The Library page. */
+.library-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.library-head > h1 {
+  margin: 0;
+}
+
+.library-head__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.library-alert {
+  margin-bottom: var(--space-6);
+}
+
+/* "Add a game": a button that opens a panel below it. */
+.library-add {
+  margin-bottom: var(--space-6);
+}
+
+.library-add > summary {
+  list-style: none;
+}
+
+.library-add > summary::-webkit-details-marker {
+  display: none;
+}
+
+.library-add__panel {
+  max-width: 560px;
+  margin-top: var(--space-3);
+}
+
+.library-add__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.library-add__lede,
+.library-searching {
+  margin: 0;
+}
+
+.library-add__lede {
+  color: var(--ink-muted);
+}
+
+.library-add__form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.library-add__form .em-field {
+  align-self: stretch;
+}
+
+/* htmx adds .htmx-request to the note while it waits, which reveals it. */
+.htmx-indicator.library-syncing,
+.htmx-indicator.library-searching {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.htmx-request.library-syncing,
+.htmx-request.library-searching {
+  display: flex;
+}
+
+.store-results:empty {
+  display: none;
+}
+
+.store-notice {
+  margin: 0;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.store-hits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.store-hit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.store-hit__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.store-hit form {
+  margin: 0;
+  flex: none;
+}
+
+.library-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.library-filters .em-field:first-child {
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+}
+
+.library-filters .em-select {
+  min-width: 180px;
+}
+
+.library-count {
+  margin: 0 0 var(--space-3);
+  color: var(--ink-muted);
+}
+
+/* Rows are separated by hairlines rather than boxed. */
+.library-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.library-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.library-row__art {
+  flex: none;
+  width: 120px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  object-fit: cover;
+}
+
+.library-row__main {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.library-row__name {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.library-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.library-row__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex: none;
+}

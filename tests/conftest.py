@@ -9,8 +9,9 @@ from starlette.requests import Request
 
 from app.auth import advance_step
 from app.main import Services, create_app
+from app.services.library import sync_library
 from app.services.secrets import hash_password
-from app.services.settings import set_setting
+from app.services.settings import set_secret, set_setting
 from app.services.steam import SteamClient
 
 FIXED_NOW = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
@@ -112,3 +113,12 @@ def onboarded_client(logged_in_client, db):
     """Like `logged_in_client`, with onboarding finished."""
     advance_step(db, "done")
     return logged_in_client
+
+
+@pytest.fixture
+def synced_games(db, app, steam_client):
+    """Steam connected (key and ID saved) and the library synced from `fake_steam`'s
+    default games: Sample Quest (appid 10, 600 min) and Test Tactics (appid 20, 120 min)."""
+    set_secret(db, app.state.vault, "steam_api_key", "steam-sample")
+    set_setting(db, "steam_id", "76561198000000001")
+    sync_library(db, steam_client, "steam-sample", "76561198000000001", FIXED_NOW)

@@ -1,0 +1,22 @@
+{#- An Ember toast: a brief, non-blocking note of something that just happened.
+    `message` is plain text and is escaped, because it can quote what the user typed or what Steam said.
+    `tone` is "success" or "danger". A success toast clears itself after six seconds; a danger toast stays until
+    it is dismissed, so the user can read what to do. `oob=true` wraps the toast so htmx appends it to #toasts
+    when it arrives inside another response; a page rendered in full puts it there with {% block toasts %}. -#}
+{% macro toast_item(message, tone="success", oob=false) -%}
+{%- if oob %}<div hx-swap-oob="beforeend:#toasts">{% endif -%}
+<div class="em-toast em-toast--{{ tone }}"{% if tone != "danger" %} hx-on::load="setTimeout(() => this.remove(), 6000)"{% endif %}>
+  {% if tone == "danger" -%}
+  <svg class="em-icon em-toast__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
+  {%- else -%}
+  <svg class="em-icon em-toast__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
+  {%- endif %}
+  <div class="em-toast__content">
+    <p class="em-toast__title text-label">{{ message }}</p>
+  </div>
+  <button type="button" aria-label="Dismiss" class="em-btn em-btn--ghost em-btn--sm em-btn--icon em-toast__close" hx-on:click="this.closest('.em-toast').remove()">
+    <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+  </button>
+</div>
+{%- if oob %}</div>{% endif -%}
+{%- endmacro %}

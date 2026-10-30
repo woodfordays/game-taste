@@ -8,7 +8,9 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
+from starlette.datastructures import FormData
 
+from app.services.library import artwork_url
 from app.services.settings import get_setting
 
 APP_DIR = Path(__file__).parent
@@ -90,6 +92,7 @@ def _when_filter(context, dt: datetime) -> str:
 templates.env.filters["when"] = _when_filter
 templates.env.filters["hours"] = hours
 templates.env.filters["lane_label"] = lane_label
+templates.env.globals["artwork_url"] = artwork_url
 
 
 def render(request: Request, name: str, status_code: int = 200, **ctx) -> HTMLResponse:
@@ -112,12 +115,26 @@ def render(request: Request, name: str, status_code: int = 200, **ctx) -> HTMLRe
     return templates.TemplateResponse(request, name, context, status_code=status_code)
 
 
+def is_htmx(request: Request) -> bool:
+    """Whether htmx made the request, so the route can answer with just a fragment."""
+    return request.headers.get("hx-request") == "true"
+
+
+async def read_form(request: Request) -> FormData:
+    """The posted form. Read here so the route itself can be a plain function.
+
+    A route that blocks, such as one calling Steam or an AI provider, has to run in a
+    worker thread; an `async def` route would hold up the whole server.
+    """
+    return await request.form()
+
+
 def redirect(request: Request, url: str) -> Response:
     """Send the browser to `url`: 303 for a normal request, HX-Redirect for htmx.
 
     An htmx request would otherwise follow a 303 and swap the target page into a
     fragment; HX-Redirect makes it load the whole page instead.
     """
-    if request.headers.get("hx-request") == "true":
+    if is_htmx(request):
         return Response(status_code=200, headers={"HX-Redirect": url})
     return RedirectResponse(url, status_code=303)
