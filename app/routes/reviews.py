@@ -1,5 +1,6 @@
 """The review dialog: opening it on a lane, saving a draft or publishing, switching lanes,
-and the two small answers its fields ask for (tag chips and who played).
+and the two small answers its fields ask for (tag chips and who played). Also the Reviews
+page, a table of every review, and a lane's read-only history of published versions.
 
 Every answer is a fragment for htmx to swap into `#dialog`, and a refused form comes back
 as the same dialog with status 200, because htmx doesn't swap an error status. A save that
@@ -16,13 +17,14 @@ from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
 from app.db import get_db
-from app.models import Game
+from app.models import Game, ReviewVersion
 from app.routes.library import MAX_APPID
 from app.services.people import PICK_PEOPLE, list_groups, list_people
 from app.services.reviews import (
     LANE_LABELS,
     OPTION_INVALID,
     RATING_INVALID,
+    VERDICTS,
     Lane,
     LaneState,
     ReviewError,
@@ -30,13 +32,15 @@ from app.services.reviews import (
     default_lane,
     effective_people,
     head_count_hint,
+    history,
     lane_states,
+    list_reviews,
     load_form,
     publish,
     save_draft,
 )
 from app.services.tags import normalize_tags
-from app.web import read_form, render
+from app.web import is_htmx, read_form, render
 
 router = APIRouter()
 
@@ -44,6 +48,10 @@ AppId = Annotated[int, Path(ge=1, le=MAX_APPID)]
 
 ACTIONS = ("draft", "publish")
 SWITCH_CHOICES = ("", "save", "discard")
+
+# The Reviews page's filters: (value, label), the empty value meaning no filter.
+LANE_OPTIONS = [("", "All lanes"), *((lane.value, LANE_LABELS[lane]) for lane in Lane)]
+VERDICT_OPTIONS = [("", "All verdicts"), *((v, v.capitalize()) for v in VERDICTS)]
 
 
 class FormInputError(ReviewError):
@@ -359,4 +367,73 @@ def people_options(
         selected=selected,
         lane=lane,
         hint=hint,
+    )
+
+
+@router.get("/reviews")
+def reviews_page(
+    request: Request,
+    lane: str = "",
+    verdict: str = "",
+    db: Session = Depends(get_db),
+):
+    """The table of every review, one row for each game and lane with a draft or a
+    published version, newest first. `lane` and `verdict` filter it, and a value that
+    isn't a lane or a verdict filters nothing, so an old link never errors.
+
+    htmx asks for just the table. Its history restore wants the whole page, since it
+    refetches a URL it pushed once it has no snapshot of it, and the two answers share
+    a URL, so `Vary` keeps a cache from handing one out for the other.
+    """
+    chosen = _parse_lane(lane)
+    kept = verdict if verdict in VERDICTS else ""
+    fragment = (
+        is_htmx(request) and request.headers.get("hx-history-restore-request") != "true"
+    )
+    response = render(
+        request,
+        "partials/reviews_table.html" if fragment else "reviews.html",
+        nav="reviews",
+        rows=list_reviews(db, chosen, kept or None),
+        lane=chosen.value if chosen else "",
+        verdict=kept,
+        lane_options=LANE_OPTIONS,
+        verdict_options=VERDICT_OPTIONS,
+    )
+    response.headers["Vary"] = "HX-Request, HX-History-Restore-Request"
+    return response
+
+
+@dataclass
+class HistoryEntry:
+    version: ReviewVersion
+    played_with: list[str]  # names, in alphabetical order
+
+
+@router.get("/games/{appid}/review/{lane}/history")
+def review_history(
+    appid: AppId,
+    lane: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Every published version of a game's lane review, newest first, as it was
+    published. Nothing here can be changed."""
+    game = _game(db, appid)
+    chosen = _parse_lane(lane)
+    if chosen is None:
+        raise HTTPException(status_code=404, detail="No such lane.")
+    names = {person.id: person.name for person in list_people(db)}
+    entries = [
+        HistoryEntry(
+            version,
+            sorted(
+                (names[p.person_id] for p in version.people if p.person_id in names),
+                key=str.casefold,
+            ),
+        )
+        for version in history(db, appid, chosen)
+    ]
+    return render(
+        request, "history.html", nav="reviews", game=game, lane=chosen, entries=entries
     )

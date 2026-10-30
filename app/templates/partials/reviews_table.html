@@ -1,0 +1,75 @@
+{#- The Reviews table: the count, then the rows or an empty row. Filtering swaps this whole block. Context: `rows` (ReviewRow: game, lane, latest
+    published version or none, whether there is a draft, and when it was last worked on), and `lane` and `verdict` (the filters, "" for
+    none, which only choose between the two empty messages here). The rating and verdict are the published ones, so a draft-only row shows
+    neither.
+
+    The game's name is a button that opens the dialog on that row's lane. Its `hx-target` and `hx-swap` are its own because the list is
+    swapped as outerHTML. The same name repeats down the table, so the button is described by its lane's cell, and the History link by
+    the button, which lets a screen reader say which row it is on.
+
+    The hidden span refreshes the list when a dialog opened from it saves: a save answers with `card-updated-{appid}` for its game, and
+    every game a dialog can be opened for is in this table. The span names its own include and target (nothing above sets them, or the
+    buttons would inherit them), and being inside the list it is replaced with it, so its events always match the rows. -#}
+<div id="reviews-list">
+  {%- if rows %}
+  <span hidden hx-get="/reviews" hx-include="#reviews-filters" hx-target="#reviews-list" hx-swap="outerHTML"
+    hx-trigger="{% for appid in rows | map(attribute='game.appid') | unique | list %}card-updated-{{ appid }} from:body{% if not loop.last %}, {% endif %}{% endfor %}"></span>
+  {%- endif %}
+  <p class="reviews-count text-caption">{{ rows | length }} {{ "review" if rows | length == 1 else "reviews" }}</p>
+  <div class="em-table-wrap">
+    <table class="em-table em-table--comfortable">
+      <caption class="em-sr-only">Your reviews, one row for each game and lane</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="text-label is-start">Game</th>
+          <th scope="col" class="text-label is-start">Lane</th>
+          <th scope="col" class="text-label is-end">Rating</th>
+          <th scope="col" class="text-label is-start">Verdict</th>
+          <th scope="col" class="text-label is-start">State</th>
+          <th scope="col" class="text-label is-start">Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for row in rows %}
+        {%- set key = "%d-%s" | format(row.game.appid, row.lane.value) %}
+        <tr id="review-{{ key }}">
+          <td class="text-body is-start">
+            <button type="button" id="open-{{ key }}" class="reviews-open" aria-describedby="lane-{{ key }}"
+              hx-get="/games/{{ row.game.appid }}/review?lane={{ row.lane.value }}" hx-target="#dialog" hx-swap="innerHTML">{{ row.game.name }}</button>
+          </td>
+          <td id="lane-{{ key }}" class="text-body is-start reviews-nowrap">{{ row.lane | lane_label }}</td>
+          <td class="text-body is-end is-numeric reviews-nowrap">
+            {%- if row.latest and row.latest.rating is not none %}{{ row.latest.rating }} / 10{% else %}<span class="reviews-none">Not rated</span>{% endif -%}
+          </td>
+          <td class="text-body is-start reviews-nowrap">
+            {%- if row.latest and row.latest.verdict %}{{ row.latest.verdict | capitalize }}{% else %}<span class="reviews-none">Not set</span>{% endif -%}
+          </td>
+          <td class="text-body is-start">
+            <div class="reviews-state">
+              {%- if row.latest and row.has_draft %}
+              <span class="em-badge em-badge--info em-badge--sm text-caption"><span class="em-badge__dot" aria-hidden="true"></span>Published, draft saved</span>
+              {%- elif row.has_draft %}
+              <span class="em-badge em-badge--info em-badge--sm text-caption"><span class="em-badge__dot" aria-hidden="true"></span>Draft</span>
+              {%- else %}
+              <span class="em-badge em-badge--neutral em-badge--sm text-caption">Published</span>
+              {%- endif %}
+              {%- if row.latest %}
+              <a class="app-link text-caption" href="/games/{{ row.game.appid }}/review/{{ row.lane.value }}/history" aria-describedby="open-{{ key }}">History</a>
+              {%- endif %}
+            </div>
+          </td>
+          <td class="text-body is-start reviews-nowrap">{{ row.updated_at | when }}</td>
+        </tr>
+        {%- else %}
+        <tr class="em-table__empty">
+          <td colspan="6" class="text-body">
+            {%- if lane or verdict %}No reviews match these filters. Pick a different lane or verdict.
+            {%- else %}No reviews yet. Reviews appear here after you save a draft or publish one.
+            {%- endif -%}
+          </td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

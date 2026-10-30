@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "partials/field.html" import select_field %}
+{#- The Reviews page. Context: `rows` (one per game and lane, newest first), `lane` and `verdict` (the filters, "" for all, shown back
+    in their selects) and the two option lists. The filters are a plain GET form that htmx upgrades: a change swaps just the table and
+    pushes the URL, so a reload or a shared link keeps the view. htmx snapshots a page for Back and Forward from its markup, which still
+    says the filters were never changed, so `hx-history="false"` has it ask the server for the page again, which reads them from the URL. -#}
+{% block title %}Reviews - Game Taste{% endblock %}
+{% block content %}
+<h1 class="text-headline reviews-title">Reviews</h1>
+
+<form id="reviews-filters" class="reviews-filters" method="get" action="/reviews"
+  hx-get="/reviews" hx-target="#reviews-list" hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit" hx-sync="this:replace" hx-history="false">
+  {{ select_field("reviews-lane", "lane", "Lane", lane_options, selected=lane) }}
+  {{ select_field("reviews-verdict", "verdict", "Verdict", verdict_options, selected=verdict) }}
+</form>
+
+{% include "partials/reviews_table.html" %}
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "partials/tag_chips.html" import tag_chips %}
+{#- A lane review's history. Context: `game`, `lane` (a Lane) and `entries` (newest first: the published version and the names of
+    who played). Read only. The words are escaped like any text and shown with their line breaks and spaces kept (`.review-text`), and
+    never trimmed or changed here. -#}
+{% block title %}{{ game.name }} · {{ lane | lane_label }} - Game Taste{% endblock %}
+{% block content %}
+<a class="app-link text-body history-back" href="/reviews">Back to reviews</a>
+<h1 class="text-headline history-title">{{ game.name }} · {{ lane | lane_label }}</h1>
+
+{% if entries %}
+<ol class="history-list">
+  {%- for entry in entries %}
+  {%- set v = entry.version %}
+  <li class="em-card">
+    <div class="em-card__body history-version">
+      <div class="history-version__head">
+        <h2 class="history-version__title text-subtitle">Version {{ v.version }}</h2>
+        <p class="history-version__when text-caption">{{ v.published_at | when }}</p>
+      </div>
+      <p class="history-version__facts text-body">
+        <span>{% if v.rating is not none %}{{ v.rating }} / 10{% else %}Not rated{% endif %}</span>
+        {%- if v.verdict %}
+        <span>Verdict: {{ v.verdict | capitalize }}</span>
+        {%- endif %}
+        {%- if entry.played_with %}
+        <span>Played with: {{ entry.played_with | join(", ") }}</span>
+        {%- endif %}
+      </p>
+      {%- if v.tags %}
+      <div class="tag-chips">{{ tag_chips(v.tags) }}</div>
+      {%- endif %}
+      {%- if v.text %}
+      <p class="review-text text-body">{{ v.text }}</p>
+      {%- endif %}
+      {%- if v.group_text %}
+      <h3 class="history-version__subtitle text-label">How it went for the group</h3>
+      <p class="review-text text-body">{{ v.group_text }}</p>
+      {%- endif %}
+    </div>
+  </li>
+  {%- endfor %}
+</ol>
+{% else %}
+<div class="em-empty">
+  <h2 class="em-empty__title text-title">No published versions yet.</h2>
+  <p class="em-empty__desc text-body-lg">A draft is not listed here. Publish the review and it appears on this page.</p>
+</div>
+{% endif %}
+{% endblock %}
