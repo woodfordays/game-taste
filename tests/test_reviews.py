@@ -953,11 +953,47 @@ def test_default_lane_counts_the_newer_of_a_lanes_draft_and_published(db, games)
     assert default_lane(db, 10) == Lane.SOLO
 
 
-def test_default_lane_ties_go_to_the_later_lane(db, games):
+def first_listed_lane(db, appid) -> Lane:
+    """The lane of the game's first row in `list_reviews`."""
+    return next(r.lane for r in list_reviews(db, None, None) if r.game.appid == appid)
+
+
+def test_default_lane_ties_between_published_lanes_go_to_the_higher_version_id(
+    db, games
+):
+    # Same timestamp, so only the ids say which lane was published last. Both orders,
+    # so it can't be the lane order (or the row the database returns first) deciding.
     publish(db, 10, Lane.TWO, ReviewForm(rating=5), FIXED_NOW)
     publish(db, 10, Lane.SOLO, ReviewForm(rating=5), FIXED_NOW)
-    save_draft(db, 10, Lane.THREE_FOUR, ReviewForm(text="wip"), FIXED_NOW)
+    assert default_lane(db, 10) == Lane.SOLO
+    publish(db, 20, Lane.SOLO, ReviewForm(rating=5), FIXED_NOW)
+    publish(db, 20, Lane.TWO, ReviewForm(rating=5), FIXED_NOW)
+    assert default_lane(db, 20) == Lane.TWO
+
+
+def test_default_lane_ties_between_drafts_go_to_the_later_lane(db, games):
+    for lane in (Lane.THREE_FOUR, Lane.SOLO, Lane.TWO):
+        save_draft(db, 10, lane, ReviewForm(text="wip"), FIXED_NOW)
     assert default_lane(db, 10) == Lane.THREE_FOUR
+
+
+def test_default_lane_a_published_version_beats_a_draft_at_the_same_time(db, games):
+    # The draft is in the later lane, so the lane order would pick it if it were used.
+    publish(db, 10, Lane.TWO, ReviewForm(rating=5), FIXED_NOW)
+    save_draft(db, 10, Lane.THREE_FOUR, ReviewForm(text="wip"), FIXED_NOW)
+    assert default_lane(db, 10) == Lane.TWO
+    save_draft(db, 20, Lane.THREE_FOUR, ReviewForm(text="wip"), FIXED_NOW)
+    publish(db, 20, Lane.TWO, ReviewForm(rating=5), FIXED_NOW)
+    assert default_lane(db, 20) == Lane.TWO
+
+
+def test_default_lane_a_drafts_time_carries_no_version_id(db, games):
+    # Solo's latest version has the higher id, but Solo's time comes from its draft,
+    # so that id doesn't count. Two was published at the same time, so Two wins.
+    publish(db, 10, Lane.TWO, ReviewForm(rating=5), LATER)
+    publish(db, 10, Lane.SOLO, ReviewForm(rating=5), FIXED_NOW)
+    save_draft(db, 10, Lane.SOLO, ReviewForm(text="wip"), LATER)
+    assert default_lane(db, 10) == Lane.TWO
 
 
 def test_default_lane_looks_only_at_that_game(db, games):
@@ -1092,6 +1128,73 @@ def test_list_reviews_ties_go_to_the_higher_version_id_then_the_later_lane(db, g
         (20, Lane.THREE_FOUR),
         (10, Lane.THREE_FOUR),
     ]
+
+
+def test_list_reviews_a_published_version_beats_a_draft_at_the_same_time(db, games):
+    # A draft has no version id, whichever of the two was saved first.
+    save_draft(db, 20, Lane.FIVE_PLUS, ReviewForm(text="wip"), FIXED_NOW)
+    publish(db, 10, Lane.SOLO, ReviewForm(rating=5), FIXED_NOW)
+    save_draft(db, 10, Lane.THREE_FOUR, ReviewForm(text="wip"), FIXED_NOW)
+    assert [(r.game.appid, r.lane) for r in list_reviews(db, None, None)] == [
+        (10, Lane.SOLO),
+        (20, Lane.FIVE_PLUS),
+        (10, Lane.THREE_FOUR),
+    ]
+
+
+def test_list_reviews_a_drafts_time_carries_no_version_id(db, games):
+    # Same setup as the default_lane test of that name: Solo's time comes from its
+    # draft, so its latest version's higher id doesn't put it ahead of Two.
+    publish(db, 10, Lane.TWO, ReviewForm(rating=5), LATER)
+    publish(db, 10, Lane.SOLO, ReviewForm(rating=5), FIXED_NOW)
+    save_draft(db, 10, Lane.SOLO, ReviewForm(text="wip"), LATER)
+    assert [r.lane for r in list_reviews(db, None, None)] == [Lane.TWO, Lane.SOLO]
+
+
+# --- one rule for "most recent" ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "first, second",
+    [
+        (Lane.TWO, Lane.SOLO),
+        (Lane.SOLO, Lane.TWO),
+        (Lane.THREE_FOUR, Lane.FIVE_PLUS),
+        (Lane.FIVE_PLUS, Lane.THREE_FOUR),
+    ],
+)
+def test_the_card_the_default_lane_and_the_list_agree_on_a_published_tie(
+    db, games, first, second
+):
+    # Two lanes published at the same `now`: the one published second is the most
+    # recent, whatever its place in the lane order.
+    publish(db, 10, first, ReviewForm(rating=1), FIXED_NOW)
+    publish(db, 10, second, ReviewForm(rating=2), FIXED_NOW)
+    assert card_summary(db, 10).lane == second
+    assert default_lane(db, 10) == second
+    assert first_listed_lane(db, 10) == second
+
+
+@pytest.mark.parametrize("published_first", [True, False])
+def test_the_default_lane_and_the_list_agree_on_a_draft_and_a_published_tie(
+    db, games, published_first
+):
+    # The published lane is the earlier one in the lane order, the draft the later.
+    if published_first:
+        publish(db, 10, Lane.TWO, ReviewForm(rating=1), FIXED_NOW)
+    save_draft(db, 10, Lane.FIVE_PLUS, ReviewForm(text="wip"), FIXED_NOW)
+    if not published_first:
+        publish(db, 10, Lane.TWO, ReviewForm(rating=1), FIXED_NOW)
+    assert default_lane(db, 10) == Lane.TWO
+    assert first_listed_lane(db, 10) == Lane.TWO
+    assert card_summary(db, 10) == CardSummary(1, [], Lane.TWO, True)
+
+
+def test_the_default_lane_and_the_list_agree_on_a_tie_between_drafts(db, games):
+    for lane in (Lane.TWO, Lane.FIVE_PLUS, Lane.SOLO):
+        save_draft(db, 10, lane, ReviewForm(text="wip"), FIXED_NOW)
+    assert default_lane(db, 10) == Lane.FIVE_PLUS
+    assert first_listed_lane(db, 10) == Lane.FIVE_PLUS
 
 
 def test_list_reviews_filters_by_lane(db, games):

@@ -9,9 +9,16 @@ Text the user wrote (`text`, `group_text`, `session_length`, `tags_raw`) is stor
 given, never trimmed or altered. The only thing that looks at it is the emptiness check
 before publishing, which strips a copy.
 
-Ties in "most recent" (two things with the same timestamp) are broken the same way
-everywhere: the higher `ReviewVersion.id` wins, and between lanes the later one in the
-order solo, two, three_four, five_plus wins.
+"Most recent" is decided one way everywhere (`default_lane`, `card_summary` and
+`list_reviews`), by `_LaneReview.recency` and `_version_recency` below:
+1. Time. A lane review's time is the newer of its draft's last save and its latest
+   publish. A draft only survives if it was saved after the last publish, so the draft
+   wins an exact tie.
+2. At the same time, the higher `ReviewVersion.id` wins. A time that comes from a draft
+   has no version id (it counts as 0), so a published version beats a draft.
+3. Still tied, which only happens between drafts: the later lane in the order solo, two,
+   three_four, five_plus wins. `list_reviews` then puts the higher app id first, so its
+   order is fixed.
 """
 
 from dataclasses import dataclass, field, replace
@@ -211,6 +218,13 @@ def _latest_versions(db: Session, review_ids: list[int]) -> dict[int, ReviewVers
     return {version.review_id: version for version in versions}
 
 
+def _version_recency(version: ReviewVersion, lane: Lane) -> tuple[datetime, int, int]:
+    """How recent a published version is, as a key where the larger is more recent:
+    (time published, version id, lane order). The ids are unique, so the lane order
+    never decides between two versions."""
+    return (version.published_at, version.id, _LANE_INDEX[lane])
+
+
 @dataclass
 class _LaneReview:
     """A lane review that has something to show: a draft, a published version or both."""
@@ -224,13 +238,18 @@ class _LaneReview:
         return Lane(self.review.lane)
 
     @property
+    def recency(self) -> tuple[datetime, int, int]:
+        """How recent the lane review is, as a key where the larger is more recent:
+        (time, version id, lane order), by the rules in the module docstring."""
+        if self.draft is not None and (
+            self.latest is None or self.draft.updated_at >= self.latest.published_at
+        ):
+            return (self.draft.updated_at, 0, _LANE_INDEX[self.lane])
+        return _version_recency(self.latest, self.lane)
+
+    @property
     def updated_at(self) -> datetime:
-        times = []
-        if self.draft is not None:
-            times.append(self.draft.updated_at)
-        if self.latest is not None:
-            times.append(self.latest.published_at)
-        return max(times)
+        return self.recency[0]
 
 
 def _lane_reviews(
@@ -476,39 +495,28 @@ def lane_states(db: Session, appid: int) -> dict[Lane, LaneState]:
 def default_lane(db: Session, appid: int) -> Lane:
     """The lane the game's dialog opens on: the one worked on most recently, else Solo.
 
-    A lane's time is the newer of its draft's last save and its latest publish.
+    Ties follow the rules in the module docstring, so this agrees with `card_summary`
+    and `list_reviews` about which lane is most recent.
     """
     found = _lane_reviews(db, appid=appid)
     if not found:
         return Lane.SOLO
-    return max(found, key=lambda f: (f.updated_at, _LANE_INDEX[f.lane])).lane
+    return max(found, key=lambda f: f.recency).lane
 
 
 def card_summary(db: Session, appid: int) -> CardSummary:
     """What a game's card shows: the latest published version across all lanes.
 
-    `has_draft` is true if any lane has a draft, even when nothing is published yet.
+    "Latest" is each lane's newest version, compared by `_version_recency`. `has_draft`
+    is true if any lane has a draft, even when nothing is published yet.
     """
-    latest = db.execute(
-        select(ReviewVersion, Review.lane)
-        .join(Review, Review.id == ReviewVersion.review_id)
-        .where(Review.appid == appid)
-        .order_by(ReviewVersion.published_at.desc(), ReviewVersion.id.desc())
-        .limit(1)
-    ).first()
-    has_draft = (
-        db.scalar(
-            select(ReviewDraft.review_id)
-            .join(Review, Review.id == ReviewDraft.review_id)
-            .where(Review.appid == appid)
-            .limit(1)
-        )
-        is not None
-    )
-    if latest is None:
+    found = _lane_reviews(db, appid=appid)
+    has_draft = any(f.draft is not None for f in found)
+    published = [f for f in found if f.latest is not None]
+    if not published:
         return CardSummary(None, [], None, has_draft)
-    version, lane = latest
-    return CardSummary(version.rating, list(version.tags), Lane(lane), has_draft)
+    best = max(published, key=lambda f: _version_recency(f.latest, f.lane))
+    return CardSummary(best.latest.rating, list(best.latest.tags), best.lane, has_draft)
 
 
 def history(db: Session, appid: int, lane: Lane) -> list[ReviewVersion]:
@@ -528,9 +536,10 @@ def list_reviews(
 ) -> list[ReviewRow]:
     """One row per game and lane that has a draft or a published version, newest first.
 
-    A row's time is the newer of its draft's last save and its latest publish. `lane`
-    keeps one lane. `verdict` keeps the rows whose latest published version has that
-    verdict, so a draft-only row never matches; an empty `verdict` filters nothing.
+    Rows are ordered by the rules in the module docstring, the same as `default_lane`
+    and `card_summary`, with the higher app id first as the last tie-break. `lane` keeps
+    one lane. `verdict` keeps the rows whose latest published version has that verdict,
+    so a draft-only row never matches; an empty `verdict` filters nothing.
     """
     found = _lane_reviews(db, lane=None if lane is None else Lane(lane))
     if verdict:
@@ -544,7 +553,8 @@ def list_reviews(
         game.appid: game
         for game in db.scalars(select(Game).where(Game.appid.in_(appids)))
     }
-    rows = [
+    found.sort(key=lambda f: (f.recency, f.review.appid), reverse=True)
+    return [
         ReviewRow(
             game=games[f.review.appid],
             lane=f.lane,
@@ -554,13 +564,3 @@ def list_reviews(
         )
         for f in found
     ]
-    rows.sort(
-        key=lambda row: (
-            row.updated_at,
-            row.latest.id if row.latest is not None else 0,
-            _LANE_INDEX[row.lane],
-            row.game.appid,
-        ),
-        reverse=True,
-    )
-    return rows
