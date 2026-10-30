@@ -15,9 +15,17 @@ def services() -> Services:
 
 @pytest.fixture
 def app(tmp_path, services):
-    return create_app(tmp_path, services=services)
+    app = create_app(tmp_path, services=services)
+    yield app
+    app.state.engine.dispose()
 
 
 @pytest.fixture
 def client(app):
     return TestClient(app)
+
+
+@pytest.fixture
+def db(app):
+    with app.state.session_factory() as session:
+        yield session
