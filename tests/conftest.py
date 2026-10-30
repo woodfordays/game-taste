@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -9,7 +9,9 @@ from starlette.requests import Request
 
 from app.auth import advance_step
 from app.main import Services, create_app
+from app.models import Game
 from app.services.library import sync_library
+from app.services.people import add_group, add_person
 from app.services.secrets import hash_password
 from app.services.settings import set_secret, set_setting
 from app.services.steam import SteamClient
@@ -129,3 +131,42 @@ def synced_games(db, app, steam_client):
     set_secret(db, app.state.vault, "steam_api_key", "steam-sample")
     set_setting(db, "steam_id", "76561198000000001")
     sync_library(db, steam_client, "steam-sample", "76561198000000001", FIXED_NOW)
+
+
+@pytest.fixture
+def games(db):
+    """Two owned games straight in the table, no Steam call: Sample Quest (appid 10,
+    600 min, last played a day before FIXED_NOW) and Test Tactics (appid 20, 120 min,
+    last played two days before)."""
+    db.add_all(
+        [
+            Game(
+                appid=10,
+                name="Sample Quest",
+                owned=True,
+                playtime_minutes=600,
+                last_played_at=FIXED_NOW - timedelta(days=1),
+                source="steam_library",
+                created_at=FIXED_NOW,
+            ),
+            Game(
+                appid=20,
+                name="Test Tactics",
+                owned=True,
+                playtime_minutes=120,
+                last_played_at=FIXED_NOW - timedelta(days=2),
+                source="steam_library",
+                created_at=FIXED_NOW,
+            ),
+        ]
+    )
+    db.commit()
+
+
+@pytest.fixture
+def people(db):
+    """(Sam, Alex, the group "Sample Crew" of both)."""
+    sam = add_person(db, "Sam", FIXED_NOW)
+    alex = add_person(db, "Alex", FIXED_NOW)
+    crew = add_group(db, "Sample Crew", [sam.id, alex.id], FIXED_NOW)
+    return sam, alex, crew

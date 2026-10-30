@@ -11,7 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 
@@ -185,6 +185,12 @@ class ReviewVersion(Base):
     named_group_id: Mapped[int | None] = mapped_column(ForeignKey("named_group.id"))
     steam_hours: Mapped[float | None] = mapped_column(Float)
     published_at: Mapped[datetime]
+
+    # Who played on this version, by person id. Loaded with the version, so a list of
+    # versions costs one extra query rather than one per version.
+    people: Mapped[list["ReviewVersionPerson"]] = relationship(
+        order_by="ReviewVersionPerson.person_id", lazy="selectin"
+    )
 
 
 class ReviewVersionPerson(Base):

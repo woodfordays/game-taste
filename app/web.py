@@ -11,6 +11,7 @@ from jinja2 import pass_context
 from starlette.datastructures import FormData
 
 from app.services.library import artwork_url
+from app.services.reviews import LANE_LABELS
 from app.services.settings import get_setting
 
 APP_DIR = Path(__file__).parent
@@ -19,13 +20,6 @@ STATIC_DIR = APP_DIR / "static"
 
 # Starlette creates the Jinja environment with autoescape on.
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
-
-LANE_LABELS = {
-    "solo": "Solo",
-    "two": "Two players",
-    "three_four": "Three to four",
-    "five_plus": "Five or more",
-}
 
 _MONTHS = (
     "Jan",
