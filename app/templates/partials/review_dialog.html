@@ -1,0 +1,218 @@
+{% from "partials/field.html" import field, select_field %}
+{% from "partials/tag_chips.html" import tag_chips %}
+{#- The review dialog for one game and lane. Swapped into #dialog and opened as a modal by the script on <dialog>. Escape and the close
+    buttons call close(), and the `close` event empties #dialog, which is what closes it for good. Clicking the scrim does nothing, since the
+    form may hold unsaved words.
+
+    Context: `game`, `lane` (a Lane), `tabs` (the lane switcher's buttons: a lane, its label, a mark of "Draft" or "Reviewed" or none, and
+    whether it is the current one), `note` (a line about what the lane holds, or none), `form` (the ReviewForm to show), `tags` (its
+    normalized tags), `error` (a plain string or none), `switch_to` (a Lane when we are asking about unsaved changes, else none), `dirty`
+    ("0" or "1"), `still` (the dialog is already on screen, so it doesn't rise again), `coop` (the lane has other players), `people`,
+    `groups`, `selected` and `hint` (for "who played"), and `details_open`.
+
+    The lane buttons all take Tab, unlike Ember's roving focus, because choosing one asks the server and swaps the whole dialog, so an
+    arrow key could not carry focus across.
+
+    Every request is made by a button inside the form, so htmx sends the whole form with it, and `hx-sync` lets only one go at a time.
+    The form's own target (#dialog) is inherited by the buttons; the tag, group and people fields set their own. The words the user wrote
+    are escaped like any text, and the first newline of a textarea is dropped by the browser, so each textarea starts with one of its own.
+    The user's words are never changed, trimmed or normalized here. -#}
+{% macro textarea_field(id, name, label, value, rows, hint=none, optional=false, autofocus=false) %}
+<div class="em-field">
+  <label for="{{ id }}" class="em-field__label text-label">{{ label }}{% if optional %}<span class="em-field__optional text-caption">Optional</span>{% endif %}</label>
+  <div class="em-input em-input--md review-textarea">
+    <textarea id="{{ id }}" name="{{ name }}" class="em-input__control text-body" rows="{{ rows }}"
+      {%- if hint %} aria-describedby="{{ id }}-hint"{% endif %}
+      {%- if autofocus %} autofocus{% endif %}>
+{{ value }}</textarea>
+  </div>
+  {%- if hint %}
+  <p id="{{ id }}-hint" class="em-field__hint text-caption">{{ hint }}</p>
+  {%- endif %}
+</div>
+{% endmacro %}
+{%- set rating = form.rating if form.rating is not none and 1 <= form.rating <= 10 else none %}
+{%- set switch_url = "/games/%d/review/%s/switch" | format(game.appid, lane.value) %}
+<dialog class="em-dialog{% if still %} is-still{% endif %}" aria-labelledby="review-title"
+  hx-on::load="if (event.target === this) this.showModal()"
+  hx-on:close="document.getElementById('dialog').replaceChildren()">
+  <div class="em-dialog__panel em-dialog__panel--lg">
+    <header class="em-dialog__header">
+      <div class="em-dialog__titles">
+        <h2 id="review-title" class="em-dialog__title text-title">{{ game.name }}</h2>
+      </div>
+      <button type="button" aria-label="Close" class="em-btn em-btn--ghost em-btn--sm em-btn--icon em-dialog__close" hx-on:click="this.closest('dialog').close()">
+        <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+      </button>
+    </header>
+
+    <form id="review-form" class="review-form" method="post" action="/games/{{ game.appid }}/review/{{ lane.value }}"
+      hx-target="#dialog" hx-swap="innerHTML settle:0ms"
+      hx-on:input="this.elements.dirty.value = '1'"
+      hx-on:keydown="if (event.key === 'Enter' && event.target.tagName === 'INPUT') event.preventDefault()">
+      <input type="hidden" name="dirty" value="{{ dirty }}">
+      <div class="em-dialog__body review-body">
+
+        <div id="review-lanes" role="radiogroup" aria-label="Number of players" class="em-seg em-seg--md em-seg--block review-lanes">
+          {%- for tab in tabs %}
+          <button type="button" role="radio" aria-checked="{{ 'true' if tab.current else 'false' }}" class="em-seg__item text-label{% if tab.current %} is-checked{% endif %}"
+            {%- if not tab.current %} hx-post="{{ switch_url }}" hx-vals='{"to": "{{ tab.lane.value }}"}' hx-sync="closest form:drop"{% endif %}>
+            <span>{{ tab.label }}</span>
+            {%- if tab.mark %}
+            <span class="lane-mark text-caption"><span class="lane-mark__dot" aria-hidden="true"></span>{{ tab.mark }}</span>
+            {%- endif %}
+          </button>
+          {%- endfor %}
+        </div>
+        {%- if note %}
+        <p class="review-note text-caption">{{ note }}</p>
+        {%- endif %}
+
+        {%- if switch_to %}
+        <div class="em-alert em-alert--warning review-prompt" role="alert">
+          <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.3 4.6a2 2 0 0 1 3.4 0l7 12a2 2 0 0 1-1.7 3H5a2 2 0 0 1-1.7-3z"/><path d="M12 9.5v4"/><circle cx="12" cy="16.6" r="0.55"/></svg>
+          <div class="em-alert__content">
+            <p class="em-alert__title text-label">You have unsaved changes in {{ lane | lane_label }}.</p>
+            <div class="em-alert__body text-body">
+              <p>Save a draft to keep them, or discard them to open {{ switch_to | lane_label }}.</p>
+            </div>
+            <div class="em-alert__action">
+              <button type="button" class="em-btn em-btn--secondary em-btn--md text-label" autofocus
+                hx-post="{{ switch_url }}" hx-vals='{"to": "{{ switch_to.value }}", "choice": "save"}' hx-disabled-elt="this" hx-sync="closest form:drop">
+                <span class="em-btn__label">Save draft and switch</span>
+              </button>
+              <button type="button" class="em-btn em-btn--ghost em-btn--md text-label"
+                hx-post="{{ switch_url }}" hx-vals='{"to": "{{ switch_to.value }}", "choice": "discard"}' hx-disabled-elt="this" hx-sync="closest form:drop">
+                <span class="em-btn__label">Discard changes and switch</span>
+              </button>
+              <button type="button" class="em-btn em-btn--ghost em-btn--md text-label" hx-on:click="document.getElementById('review-text').focus(); this.closest('.review-prompt').remove()">
+                <span class="em-btn__label">Stay here</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        {%- endif %}
+
+        {%- if error %}
+        <div class="em-alert em-alert--danger" role="alert">
+          <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
+          <div class="em-alert__content">
+            <p class="em-alert__title text-label">{{ error }}</p>
+          </div>
+        </div>
+        {%- endif %}
+
+        <div class="em-field">
+          <span id="review-rating-label" class="em-field__label text-label">Rating</span>
+          <div id="review-rating" role="radiogroup" aria-labelledby="review-rating-label" aria-describedby="review-rating-hint" class="em-seg em-seg--md em-seg--block">
+            {%- for n in range(1, 11) %}
+            <button type="button" role="radio" data-value="{{ n }}" aria-checked="{{ 'true' if n == rating else 'false' }}" tabindex="{{ 0 if n == rating or (rating is none and n == 1) else -1 }}" class="em-seg__item text-label{% if n == rating %} is-checked{% endif %}">{{ n }}</button>
+            {%- endfor %}
+          </div>
+          <input type="hidden" name="rating" value="{{ rating if rating is not none else '' }}">
+          <p id="review-rating-hint" class="em-field__hint text-caption">From 1 to 10. Select your pick again to clear it.</p>
+        </div>
+
+        {{ textarea_field("review-text", "text", "Your review", form.text, 8, hint="Write it however you like. Your words are saved exactly as written. To publish, add a rating or some words.", autofocus=not switch_to) }}
+
+        <div class="em-field">
+          <label for="review-tags" class="em-field__label text-label">Tags<span class="em-field__optional text-caption">Optional</span></label>
+          <div class="em-input em-input--md">
+            <input id="review-tags" name="tags" type="text" class="em-input__control text-body" value="{{ form.tags_raw }}" autocomplete="off" aria-describedby="review-tags-hint"
+              hx-get="/tags/preview" hx-trigger="input changed delay:250ms" hx-target="#tag-chips" hx-swap="innerHTML" hx-sync="this:replace">
+          </div>
+          <div id="tag-chips" class="tag-chips">{{ tag_chips(tags) }}</div>
+          <p id="review-tags-hint" class="em-field__hint text-caption">Separate tags with commas. A # in front is fine, and spaces become underscores.</p>
+        </div>
+
+        <details class="review-details"{% if details_open %} open{% endif %}>
+          <summary class="em-btn em-btn--ghost em-btn--md text-label">
+            <svg class="em-icon review-details__chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 9.5l5.5 5.5 5.5-5.5"/></svg>
+            <span class="em-btn__label">More details</span>
+          </summary>
+          <div class="review-details__body">
+            <div class="review-grid">
+              {{ select_field("review-status", "status", "Status", [("", "Not set"), ("finished", "Finished"), ("playing", "Playing"), ("demo", "Demo"), ("dropped", "Dropped")], selected=form.status) }}
+              {{ select_field("review-verdict", "verdict", "Verdict", [("", "Not set"), ("loved", "Loved"), ("liked", "Liked"), ("mixed", "Mixed"), ("disliked", "Disliked")], selected=form.verdict) }}
+            </div>
+            <p class="review-details__heading text-label">Feel</p>
+            <div class="review-grid">
+              {{ select_field("review-walk-away", "walk_away", "Can you walk away mid-game?", [("", "Not set"), ("yes", "Yes"), ("partly", "Partly"), ("no", "No")], selected=form.walk_away) }}
+              {{ select_field("review-complexity", "complexity", "Complexity", [("", "Not set"), ("too_light", "Too light"), ("about_right", "About right"), ("too_much", "Too much")], selected=form.complexity) }}
+            </div>
+            {{ field("review-session", "session_length", "Session or run length", value=form.session_length, required=false, optional=true, autocomplete="off", hint="For example, 45 minutes or one full run.") }}
+
+            {%- if coop %}
+            <div id="review-who" class="review-who">
+              {% include "partials/people_options.html" %}
+              <div class="em-field">
+                <label for="review-group" class="em-field__label text-label">Named group<span class="em-field__optional text-caption">Optional</span></label>
+                <div class="em-input em-select em-input--md">
+                  <select id="review-group" name="named_group_id" class="em-input__control text-body" aria-describedby="review-group-hint"
+                    hx-get="/people/options?lane={{ lane.value }}" hx-trigger="change" hx-target="#people-options" hx-swap="outerHTML" hx-include="#review-who" hx-sync="this:replace">
+                    <option value="">No group</option>
+                    {%- for group, members in groups %}
+                    <option value="{{ group.id }}"{% if group.id == form.named_group_id %} selected{% endif %}>{{ group.name }}</option>
+                    {%- endfor %}
+                  </select>
+                  <svg class="em-icon em-select__chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 9.5l5.5 5.5 5.5-5.5"/></svg>
+                </div>
+                <p id="review-group-hint" class="em-field__hint text-caption">Choosing a group adds all its members to who played.</p>
+              </div>
+            </div>
+            {{ textarea_field("review-group-text", "group_text", "How it went for the group", form.group_text, 4, optional=true) }}
+            {%- endif %}
+          </div>
+        </details>
+      </div>
+
+      <footer class="em-dialog__footer">
+        <button type="button" class="em-btn em-btn--secondary em-btn--md text-label" hx-on:click="this.closest('dialog').close()">
+          <span class="em-btn__label">Cancel</span>
+        </button>
+        <button type="submit" name="action" value="draft" class="em-btn em-btn--secondary em-btn--md text-label"
+          hx-post="/games/{{ game.appid }}/review/{{ lane.value }}" hx-disabled-elt="this" hx-sync="closest form:drop">
+          <span class="em-btn__label">Save draft</span>
+        </button>
+        <button type="submit" name="action" value="publish" class="em-btn em-btn--primary em-btn--md text-label"
+          hx-post="/games/{{ game.appid }}/review/{{ lane.value }}" hx-disabled-elt="this" hx-sync="closest form:drop">
+          <span class="em-btn__label">Publish review</span>
+        </button>
+      </footer>
+    </form>
+  </div>
+</dialog>
+
+{#- The rating row is Ember's segmented control, so it is a group of buttons with the radio role and a hidden field holds the pick.
+    Selecting the checked number again clears it, and the arrow keys, Home and End move the pick like Ember's. -#}
+<script>
+  (function () {
+    var form = document.getElementById("review-form");
+    var group = document.getElementById("review-rating");
+    var field = form.elements.rating;
+    var items = Array.prototype.slice.call(group.querySelectorAll("[role=radio]"));
+    function pick(item) {
+      items.forEach(function (other) {
+        var on = other === item;
+        other.classList.toggle("is-checked", on);
+        other.setAttribute("aria-checked", on ? "true" : "false");
+        other.tabIndex = on || (!item && other === items[0]) ? 0 : -1;
+      });
+      field.value = item ? item.getAttribute("data-value") : "";
+      form.elements.dirty.value = "1";
+    }
+    group.addEventListener("click", function (event) {
+      var item = event.target.closest("[role=radio]");
+      if (item) pick(item.classList.contains("is-checked") ? null : item);
+    });
+    group.addEventListener("keydown", function (event) {
+      var at = items.indexOf(document.activeElement);
+      var to = { ArrowRight: at + 1, ArrowDown: at + 1, ArrowLeft: at - 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[event.key];
+      if (at < 0 || to === undefined) return;
+      event.preventDefault();
+      var next = items[(to + items.length) % items.length];
+      pick(next);
+      next.focus();
+    });
+  })();
+</script>

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{#- Home. Context: `cards` (a pair of a game and its card summary for each game switched on as Currently playing) and `recent`
+    (when there are no cards: the owned games played most recently, up to five, each with a button that opens its review dialog). -#}
+{% block title %}Home - Game Taste{% endblock %}
+{% block content %}
+<h1 class="home-title text-headline">Home</h1>
+
+{% if cards %}
+<section aria-labelledby="playing-title">
+  <h2 id="playing-title" class="home-section-title text-title">Currently playing</h2>
+  <ul class="card-grid">
+    {%- for game, summary in cards %}
+    {% include "partials/card.html" %}
+    {%- endfor %}
+  </ul>
+</section>
+{% else %}
+<div class="em-empty">
+  <h2 class="em-empty__title text-title">Tell me about a game you played recently</h2>
+  <p class="em-empty__desc text-body-lg">Games appear here when you switch on Currently playing in your library.</p>
+</div>
+
+{#- The rows look like the Library's, so they share its styles. -#}
+{% if recent %}
+<section aria-labelledby="recent-title">
+  <h2 id="recent-title" class="home-section-title text-title">Recently played</h2>
+  <ul class="library-rows">
+    {%- for game in recent %}
+    <li class="library-row">
+      <img class="library-row__art" src="{{ artwork_url(game.appid) }}" alt="" width="120" height="56" loading="lazy" referrerpolicy="no-referrer">
+      <div class="library-row__main">
+        <p class="library-row__name text-subtitle">{{ game.name }}</p>
+        <p class="library-row__meta text-caption">
+          <span>Last played {{ game.last_played_at | when }}</span>
+        </p>
+      </div>
+      <div class="library-row__actions">
+        <button type="button" class="em-btn em-btn--secondary em-btn--md text-label" aria-label="Write a review for {{ game.name }}"
+          hx-get="/games/{{ game.appid }}/review" hx-target="#dialog">
+          <span class="em-btn__label">Write a review</span>
+        </button>
+      </div>
+    </li>
+    {%- endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,30 @@
+{% from "partials/tag_chips.html" import tag_chips %}
+{#- One "Currently playing" card on Home. Context: `game` and `summary` (the game's CardSummary: the latest published rating, lane and
+    tags, and whether any lane has a draft). The card refreshes itself when its review changes: saving or publishing in the dialog
+    answers with the `card-updated-{appid}` event, and the card then fetches itself again. The name is the one button, stretched over the
+    whole card by CSS, and it opens the review dialog. Its swap is set to innerHTML because the card's own outerHTML swap would
+    otherwise be inherited. -#}
+<li id="card-{{ game.appid }}" class="game-card em-card"
+  hx-get="/games/{{ game.appid }}/card" hx-trigger="card-updated-{{ game.appid }} from:body" hx-swap="outerHTML">
+  <img class="game-card__art" src="{{ artwork_url(game.appid) }}" alt="" width="460" height="215" loading="lazy" referrerpolicy="no-referrer">
+  <div class="game-card__body">
+    <h3 class="game-card__name text-subtitle">
+      <button type="button" class="game-card__open" aria-label="Open review for {{ game.name }}"
+        hx-get="/games/{{ game.appid }}/review" hx-target="#dialog" hx-swap="innerHTML">{{ game.name }}</button>
+    </h3>
+    <p class="game-card__rating text-body">{% if summary.rating is not none %}{{ summary.rating }} / 10{% else %}Not rated{% endif %}</p>
+    {%- if summary.lane or summary.has_draft %}
+    <div class="game-card__badges">
+      {%- if summary.lane %}
+      <span class="em-badge em-badge--neutral em-badge--sm text-caption">{{ summary.lane | lane_label }}</span>
+      {%- endif %}
+      {%- if summary.has_draft %}
+      <span class="em-badge em-badge--info em-badge--sm text-caption"><span class="em-badge__dot" aria-hidden="true"></span>Draft saved</span>
+      {%- endif %}
+    </div>
+    {%- endif %}
+    {%- if summary.tags %}
+    <div class="tag-chips">{{ tag_chips(summary.tags) }}</div>
+    {%- endif %}
+  </div>
+</li>

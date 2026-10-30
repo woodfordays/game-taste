@@ -1,0 +1,28 @@
+{#- "Who played" in the review dialog: a checkbox for each person, and the head-count hint under them. Context: `people` (everyone, by name),
+    `selected` (the ids to tick: the people ticked plus the named group's members), `lane` (or none) and `hint` (plain text, or none).
+    It sits in #review-who with the named group select. Choosing a group swaps this whole block, with the members ticked. Ticking a person
+    swaps only the hint (hx-select picks #people-hint out of the answer), so focus stays on the checkbox. Both ask /people/options with
+    everything in #review-who. Names are escaped like any text. -#}
+<div id="people-options" class="review-people">
+  {%- if people %}
+  <fieldset class="people-members"
+    hx-get="/people/options{% if lane %}?lane={{ lane.value }}{% endif %}" hx-trigger="change" hx-target="#people-hint" hx-select="#people-hint" hx-swap="outerHTML" hx-include="#review-who" hx-sync="this:replace">
+    <legend class="em-field__label text-label">Who played</legend>
+    {%- for person in people %}
+    <div class="em-check">
+      <input id="review-person-{{ person.id }}" type="checkbox" class="em-check__box" name="people" value="{{ person.id }}"
+        {%- if person.id in selected %} checked{% endif %}>
+      <span class="em-check__text">
+        <label for="review-person-{{ person.id }}" class="em-check__label text-body">{{ person.name }}</label>
+      </span>
+    </div>
+    {%- endfor %}
+  </fieldset>
+  {%- else %}
+  <div class="em-field">
+    <span class="em-field__label text-label">Who played</span>
+    <p class="em-field__hint text-caption">You haven't added anyone yet. Add the people you play with in Settings.</p>
+  </div>
+  {%- endif %}
+  <p id="people-hint" class="review-hint text-caption" role="status">{{ hint or "" }}</p>
+</div>
