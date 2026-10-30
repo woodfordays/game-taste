@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import Paths
 from app.db import make_engine, make_session_factory, run_migrations
@@ -13,6 +14,7 @@ from app.services.secrets import (
     load_or_create_key,
     load_or_create_session_secret,
 )
+from app.web import STATIC_DIR
 
 
 @dataclass
@@ -45,5 +47,7 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
     @app.get("/healthz", response_class=PlainTextResponse)
     def healthz() -> str:
         return "ok"
+
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     return app

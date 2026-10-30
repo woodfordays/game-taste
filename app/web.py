@@ -1,0 +1,123 @@
+"""Page rendering: templates, the render()/redirect() helpers and the display filters."""
+
+from datetime import datetime, timezone
+from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from fastapi import Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
+
+from app.services.settings import get_setting
+
+APP_DIR = Path(__file__).parent
+TEMPLATES_DIR = APP_DIR / "templates"
+STATIC_DIR = APP_DIR / "static"
+
+# Starlette creates the Jinja environment with autoescape on.
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+LANE_LABELS = {
+    "solo": "Solo",
+    "two": "Two players",
+    "three_four": "Three to four",
+    "five_plus": "Five or more",
+}
+
+_MONTHS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
+
+
+def _zone(tz: str) -> ZoneInfo | timezone:
+    """The user's time zone, or UTC when the saved name isn't a known zone."""
+    try:
+        return ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        return timezone.utc
+
+
+def when(dt: datetime, now: datetime, tz: str) -> str:
+    """Relative time under a day ("4 min ago"), absolute after ("Oct 8, 9:42 AM").
+
+    `dt` and `now` are timezone-aware. The absolute form is in `tz` and gains the
+    year ("Oct 8, 2025, 9:42 AM") when it isn't `now`'s year.
+    """
+    seconds = (now - dt).total_seconds()
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)} min ago"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)} h ago"
+
+    zone = _zone(tz)
+    local = dt.astimezone(zone)
+    # Built by hand: strftime flags for unpadded numbers (%-d, %#d) differ by platform.
+    year = f", {local.year}" if local.year != now.astimezone(zone).year else ""
+    hour = local.hour % 12 or 12
+    meridiem = "AM" if local.hour < 12 else "PM"
+    return f"{_MONTHS[local.month - 1]} {local.day}{year}, {hour}:{local.minute:02d} {meridiem}"
+
+
+def hours(minutes: int | None) -> str:
+    """Playtime in hours with one decimal and a thousands separator ("1,099.9 h")."""
+    return f"{(minutes or 0) / 60:,.1f} h"
+
+
+def lane_label(lane: str) -> str:
+    key = getattr(lane, "value", lane)
+    return LANE_LABELS.get(key, key)
+
+
+@pass_context
+def _when_filter(context, dt: datetime) -> str:
+    return when(dt, context["now"], context["tz"])
+
+
+templates.env.filters["when"] = _when_filter
+templates.env.filters["hours"] = hours
+templates.env.filters["lane_label"] = lane_label
+
+
+def render(request: Request, name: str, status_code: int = 200, **ctx) -> HTMLResponse:
+    """Render a template with the shell's context.
+
+    Adds `theme` (from the cookie; anything but "light" is dark), `nav` (the current
+    section: "home", "library", "reviews" or "settings"; None by default), `tz` (the
+    timezone setting, UTC by default) and `now` (from the app clock). Values in `ctx` win.
+    """
+    app = request.app
+    with app.state.session_factory() as db:
+        tz = get_setting(db, "timezone", "UTC") or "UTC"
+    context = {
+        "theme": "light" if request.cookies.get("theme") == "light" else "dark",
+        "nav": None,
+        "tz": tz,
+        "now": app.state.services.clock(),
+    }
+    context.update(ctx)
+    return templates.TemplateResponse(request, name, context, status_code=status_code)
+
+
+def redirect(request: Request, url: str) -> Response:
+    """Send the browser to `url`: 303 for a normal request, HX-Redirect for htmx.
+
+    An htmx request would otherwise follow a 303 and swap the target page into a
+    fragment; HX-Redirect makes it load the whole page instead.
+    """
+    if request.headers.get("hx-request") == "true":
+        return Response(status_code=200, headers={"HX-Redirect": url})
+    return RedirectResponse(url, status_code=303)

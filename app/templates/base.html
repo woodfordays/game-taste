@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en" data-theme="{{ theme }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Game Taste{% endblock %}</title>
+  <link rel="stylesheet" href="/static/ember/tokens.css">
+  <link rel="stylesheet" href="/static/ember/bundle.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/htmx.min.js" defer></script>
+</head>
+<body hx-headers='{"HX-Request": "true"}'>
+  <div class="app-shell">
+    <nav class="em-sidenav" aria-label="Main">
+      <div class="em-sidenav__header">
+        <span class="text-subtitle">Game Taste</span>
+      </div>
+      <div class="em-sidenav__sections">
+        <div class="em-sidenav__section">
+          <ul class="em-sidenav__list">
+            {% for key, label, href in [("home", "Home", "/"), ("library", "Library", "/library"), ("reviews", "Reviews", "/reviews"), ("settings", "Settings", "/settings")] %}
+            <li>
+              <a href="{{ href }}" class="em-sidenav__item text-label{% if nav == key %} is-current{% endif %}"{% if nav == key %} aria-current="page"{% endif %}>
+                <span class="em-sidenav__label">{{ label }}</span>
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+      <div class="em-sidenav__footer">
+        {% set toggle_label = "Switch to dark theme" if theme == "light" else "Switch to light theme" %}
+        <button type="button" id="theme-toggle" class="em-btn em-btn--ghost em-btn--md em-btn--icon" aria-label="{{ toggle_label }}" title="{{ toggle_label }}">
+          <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.5 14.2A7.8 7.8 0 1 1 9.8 4.5a6.3 6.3 0 0 0 9.7 9.7z"/></svg>
+        </button>
+      </div>
+    </nav>
+    <main class="app-main">
+      <div class="app-content">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+  <div id="dialog"></div>
+  <div id="toasts" class="em-toast-region" aria-live="polite" aria-relevant="additions"></div>
+  <script>
+    (function () {
+      var button = document.getElementById("theme-toggle");
+      button.addEventListener("click", function () {
+        var next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+        document.documentElement.dataset.theme = next;
+        document.cookie = "theme=" + next + "; path=/; max-age=31536000; samesite=lax";
+        var label = next === "light" ? "Switch to dark theme" : "Switch to light theme";
+        button.setAttribute("aria-label", label);
+        button.setAttribute("title", label);
+      });
+    })();
+  </script>
+</body>
+</html>

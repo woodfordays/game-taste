@@ -1,0 +1,150 @@
+/* Ember — generated from tokens.json */
+:root, [data-theme="dark"] {
+  --ember-50: #fff5eb;
+  --ember-100: #ffe8d6;
+  --ember-200: #ffd2b3;
+  --ember-300: #ffb486;
+  --ember-400: #ff8c4f;
+  --ember-500: #fc6012;
+  --ember-600: #d14500;
+  --ember-700: #af3302;
+  --ember-800: #8a260b;
+  --ember-900: #631c0d;
+  --ember-950: #3f1209;
+  --bg: #0f0c0a;
+  --surface: #161310;
+  --surface-raised: #1e1a17;
+  --surface-sunken: #110e0c;
+  --surface-hover: #26211e;
+  --surface-active: #2f2a27;
+  --line: #2f2b27;
+  --line-strong: #716a65;
+  --ink: #f5f0ec;
+  --ink-muted: #c4bcb6;
+  --ink-subtle: #9d958f;
+  --ink-disabled: #5f5a55;
+  --ember: var(--ember-500);
+  --ember-hover: var(--ember-400);
+  --on-ember: #170c09;
+  --ember-text: var(--ember-400);
+  --ember-soft: var(--ember-950);
+  --focus: var(--ember-400);
+  --success: #3bd5be;
+  --success-soft: #0b2621;
+  --warning: #fdc146;
+  --warning-soft: #2d1f0a;
+  --danger: #fd7678;
+  --danger-soft: #361717;
+  --danger-solid: #d42834;
+  --on-danger: #ffffff;
+  --info: #73bdfa;
+  --info-soft: #122232;
+  --scrim: #0a0807b8;
+  --chart-1: #f05810;
+  --chart-2: #00a998;
+  --chart-3: #8968d4;
+  --chart-4: #bf890d;
+  --chart-5: #3a8ce0;
+  --chart-6: #d8488c;
+  --shadow-xs: 0 1px 2px 0 #00000052;
+  --shadow-sm: 0 1px 2px 0 #0000005c, 0 2px 8px -2px #0000004d;
+  --shadow-md: 0 4px 12px -2px #00000080, 0 12px 32px -8px #000000a6;
+  --shadow-lg: 0 8px 24px -4px #0000009e, 0 32px 64px -16px #000000c2;
+  --highlight: inset 0 1px 0 0 #ffffff14;
+  --glow: 0 0 0 1px #fc601240, 0 6px 20px -6px #fc6012b3;
+  --focus-ring: 0 0 0 2px #0f0c0a, 0 0 0 4px #ff8c4f;
+}
+[data-theme="light"] {
+  --bg: #faf7f4;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f5f2ef;
+  --surface-hover: #f1edea;
+  --surface-active: #e8e3df;
+  --line: #e4dfda;
+  --line-strong: #8d8681;
+  --ink: #1e1814;
+  --ink-muted: #5d554f;
+  --ink-subtle: #716963;
+  --ink-disabled: #ada6a2;
+  --ember: var(--ember-600);
+  --ember-hover: var(--ember-700);
+  --on-ember: #ffffff;
+  --ember-text: var(--ember-700);
+  --ember-soft: var(--ember-100);
+  --focus: var(--ember-600);
+  --success: #007567;
+  --success-soft: #dcf7f1;
+  --warning: #995d0c;
+  --warning-soft: #fff1d1;
+  --danger: #be2035;
+  --danger-soft: #ffebea;
+  --danger-solid: #c51c2b;
+  --on-danger: #ffffff;
+  --info: #1969b4;
+  --info-soft: #e5f2ff;
+  --scrim: #1e181473;
+  --chart-1: #e14e00;
+  --chart-2: #009b8b;
+  --chart-3: #6d47b8;
+  --chart-4: #c28400;
+  --chart-5: #2474cf;
+  --chart-6: #d43b86;
+  --shadow-xs: 0 1px 2px 0 #1e18140f;
+  --shadow-sm: 0 1px 2px 0 #1e18140d, 0 2px 8px -2px #1e181414;
+  --shadow-md: 0 4px 12px -2px #1e18141a, 0 12px 32px -8px #1e181429;
+  --shadow-lg: 0 8px 24px -4px #1e18141f, 0 32px 64px -16px #1e18143d;
+  --highlight: inset 0 1px 0 0 #ffffffb3;
+  --glow: 0 4px 14px -4px #d1450073;
+  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #d14500;
+}
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+  --control-sm: 28px;
+  --control-md: 36px;
+  --control-lg: 44px;
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --sidenav-width: 240px;
+  --content-max: 1280px;
+  --z-sticky: 100;
+  --z-dropdown: 1000;
+  --z-overlay: 1300;
+  --z-modal: 1400;
+  --z-toast: 1500;
+  --z-tooltip: 1600;
+  --font-display: "Bricolage Grotesque", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.text-display { font-family: var(--font-display); font-size: 44px; line-height: 48px; font-weight: 600; letter-spacing: -0.025em; }
+.text-headline { font-family: var(--font-display); font-size: 30px; line-height: 36px; font-weight: 600; letter-spacing: -0.02em; }
+.text-title { font-family: var(--font-display); font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; }
+.text-subtitle { font-family: var(--font-sans); font-size: 15px; line-height: 22px; font-weight: 600; }
+.text-body-lg { font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 400; }
+.text-body { font-family: var(--font-sans); font-size: 14px; line-height: 20px; font-weight: 400; }
+.text-label { font-family: var(--font-sans); font-size: 13px; line-height: 18px; font-weight: 500; }
+.text-caption { font-family: var(--font-sans); font-size: 12px; line-height: 16px; font-weight: 400; }
+.text-metric-lg { font-family: var(--font-sans); font-size: 48px; line-height: 52px; font-weight: 600; letter-spacing: -0.03em; }
+.text-metric { font-family: var(--font-sans); font-size: 28px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; }
+.text-code { font-family: var(--font-mono); font-size: 13px; line-height: 20px; font-weight: 400; }
+.text-eyebrow { font-family: var(--font-mono); font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: 0.08em; }
+@font-face { font-family: "Bricolage Grotesque"; src: url("fonts/BricolageGrotesque-Variable.woff2") format("woff2"); font-weight: 200 800; font-style: normal; font-display: swap; }
+@font-face { font-family: "Instrument Sans"; src: url("fonts/InstrumentSans-Variable.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Variable.woff2") format("woff2"); font-weight: 100 800; font-style: normal; font-display: swap; }

@@ -1,0 +1,30 @@
+/* App layout on top of Ember: the side nav beside the content. Colors, spacing and type come from Ember tokens. */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.app-shell > .em-sidenav {
+  position: sticky;
+  top: 0;
+  flex: none;
+  height: 100vh;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-8);
+}
+
+.app-content {
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+#toasts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
