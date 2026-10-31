@@ -703,5 +703,7 @@ def test_the_bar_is_the_ember_progress_component(onboarded_client, db):
 def test_every_page_with_the_status_shows_the_bar(onboarded_client, db):
     progress_run(db, running_job(db), total=4, checked=1)
     for url in ("/settings", "/profiles", "/profiles/lane/solo"):
-        bar = progress_bar(html.unescape(onboarded_client.get(url).text))
+        text = html.unescape(onboarded_client.get(url).text)
+        # Settings has other bars (the AI check's, Steam's) before the status area.
+        bar = progress_bar(text[text.index('id="refresh-status"') :])
         assert bar and "1 of 4" in bar, url

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/field.html" import field, select_field %}
 {% from "partials/toast.html" import toast_item %}
+{% from "partials/progress.html" import busy_note %}
 {#- The Library page. Context: `games`, `q` and `sort` (the filters, shown back in their fields), `connected` (Steam key and
     ID are saved) and `toast`, which a re-sync or an add sets when the page comes back as a whole rather than as a fragment. -#}
 {% block title %}Library - Game Taste{% endblock %}
@@ -10,10 +11,7 @@
   <h1 class="text-headline">Library</h1>
   {% if connected %}
   <div class="library-head__actions">
-    <p id="library-syncing" class="htmx-indicator library-syncing text-caption" role="status">
-      <span class="em-spinner em-spinner--ember" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2.5"><circle class="em-spinner__track" cx="12" cy="12" r="9"/><path class="em-spinner__arc" d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>
-      <span>Syncing your library...</span>
-    </p>
+    {{ busy_note("Syncing your library...", id="library-syncing") }}
     <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"
       hx-post="/library/sync" hx-include="#library-filters" hx-target="#library-list" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator="#library-syncing">
       <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3L19.5 9"/><path d="M19.5 4.5V9H15"/></svg>
@@ -48,10 +46,7 @@
         {{ field("store-term", "term", "Game name", autocomplete="off", hint="Part of the name is enough.") }}
         <button type="submit" class="em-btn em-btn--primary em-btn--md text-label"><span class="em-btn__label">Search Steam</span></button>
       </form>
-      <p id="store-searching" class="htmx-indicator library-searching text-caption" role="status">
-        <span class="em-spinner em-spinner--ember" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2.5"><circle class="em-spinner__track" cx="12" cy="12" r="9"/><path class="em-spinner__arc" d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>
-        <span>Searching the Steam store...</span>
-      </p>
+      {{ busy_note("Searching the Steam store...", id="store-searching") }}
       <div id="store-results" class="store-results" aria-live="polite"></div>
     </div>
   </div>

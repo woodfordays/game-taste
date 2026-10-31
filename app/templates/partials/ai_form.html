@@ -3,6 +3,7 @@
     optionally `row_url` (where "Add provider" fetches a row; defaults to `form_action` + "/provider-row").
     A submit swaps this whole form, so it carries its own errors and check results. -#}
 {% from "partials/field.html" import field, select_field %}
+{% from "partials/progress.html" import busy_note %}
 {% set row_url = row_url | default(form_action ~ "/provider-row") %}
 {% set onboarding = mode != "settings" %}
 {% set submit_label = "Test and continue" if onboarding else "Test and save" %}
@@ -63,9 +64,6 @@
 
   <div class="ai-actions">
     <button id="ai-submit" type="submit" class="em-btn {{ 'em-btn--primary' if onboarding else 'em-btn--secondary' }} em-btn--md text-label"><span class="em-btn__label">{{ submit_label }}</span></button>
-    <span class="htmx-indicator ai-testing text-caption" role="status">
-      <span class="em-spinner em-spinner--ember" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2.5"><circle class="em-spinner__track" cx="12" cy="12" r="9"/><path class="em-spinner__arc" d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>
-      <span>Testing connections... Each check can take up to 30 seconds.</span>
-    </span>
+    {{ busy_note("Testing connections... Each check can take up to 30 seconds.") }}
   </div>
 </form>

@@ -4,6 +4,7 @@
     (a field's problem), `error` (what Steam said), `saved` (what a save did) and `focus` (the field to focus: "key", "profile" or "region") may be none. The saved key is never rendered. -#}
 {% from "partials/field.html" import field %}
 {% from "partials/settings_alerts.html" import saved_alert, failed_alert %}
+{% from "partials/progress.html" import busy_note %}
 <form id="settings-steam" class="settings-form" method="post" action="/settings/steam"
   hx-post="/settings/steam" hx-target="#settings-steam" hx-swap="outerHTML" hx-disabled-elt="find button">
 
@@ -28,9 +29,6 @@
 
   <div class="settings-actions">
     <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Save Steam settings</span></button>
-    <p class="htmx-indicator steam-importing text-caption" role="status">
-      <span class="em-spinner em-spinner--ember" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2.5"><circle class="em-spinner__track" cx="12" cy="12" r="9"/><path class="em-spinner__arc" d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>
-      <span>Saving... Importing a large library can take a few seconds.</span>
-    </p>
+    {{ busy_note("Saving... Importing a large library can take a few seconds.") }}
   </div>
 </form>

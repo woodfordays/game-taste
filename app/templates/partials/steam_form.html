@@ -3,6 +3,7 @@
     said, a plain string), and `key_error` and `profile_error` (a missing field). All three errors may be none.
     The skip button belongs to #steam-skip-form, which onboarding/steam.html defines outside this form. -#}
 {% from "partials/field.html" import field %}
+{% from "partials/progress.html" import busy_note %}
 <form id="steam-form" class="auth-form" method="post" action="/onboarding/steam"
   hx-post="/onboarding/steam" hx-target="#steam-form" hx-swap="outerHTML" hx-disabled-elt="#steam-submit, #steam-skip">
 
@@ -39,8 +40,5 @@
     <button id="steam-skip" type="submit" form="steam-skip-form" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Skip for now</span></button>
     <button id="steam-submit" type="submit" class="em-btn em-btn--primary em-btn--md text-label"><span class="em-btn__label">Import my library</span></button>
   </div>
-  <p class="htmx-indicator steam-importing text-caption" role="status">
-    <span class="em-spinner em-spinner--ember" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2.5"><circle class="em-spinner__track" cx="12" cy="12" r="9"/><path class="em-spinner__arc" d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>
-    <span>Importing your library... A large library can take a few seconds.</span>
-  </p>
+  {{ busy_note("Importing your library... A large library can take a few seconds.") }}
 </form>
