@@ -273,3 +273,53 @@ class Job(Base):
     # What to tell the user when the job failed. Never an exception's own message, which
     # might hold a secret.
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class Profile(Base):
+    """A taste profile: one per lane and one per named group. Its versions hold the content."""
+
+    __tablename__ = "profile"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(unique=True)  # "lane:solo" or "group:3"
+    kind: Mapped[str]  # lane or group
+    lane: Mapped[str | None]
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("named_group.id"))
+    created_at: Mapped[datetime]
+
+
+class ProfileVersion(Base):
+    """One version of a profile, never edited once saved. The model, provider and prompt
+    that wrote it are kept beside it, and `profile_version_source` lists the review versions
+    it learned from."""
+
+    __tablename__ = "profile_version"
+    __table_args__ = (UniqueConstraint("profile_id", "version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id"))
+    version: Mapped[int]
+    # The five sections (see `app.services.profiles.ProfileContent`).
+    content: Mapped[dict] = mapped_column(JSON, default=dict)
+    changelog: Mapped[str] = mapped_column(Text, default="")
+    ai_call_id: Mapped[int | None] = mapped_column(ForeignKey("ai_call.id"))
+    # The refresh run that made this version. A plain number until the run table exists.
+    refresh_run_id: Mapped[int | None]
+    model: Mapped[str]
+    provider_kind: Mapped[str]
+    prompt_name: Mapped[str]
+    prompt_version: Mapped[str]
+    created_at: Mapped[datetime]
+
+
+class ProfileVersionSource(Base):
+    """A review version that a profile version learned from."""
+
+    __tablename__ = "profile_version_source"
+
+    profile_version_id: Mapped[int] = mapped_column(
+        ForeignKey("profile_version.id"), primary_key=True
+    )
+    review_version_id: Mapped[int] = mapped_column(
+        ForeignKey("review_version.id"), primary_key=True
+    )

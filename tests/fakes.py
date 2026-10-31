@@ -1,6 +1,7 @@
 """Stand-ins for the AI providers, Tavily and Steam, so no test touches the network."""
 
 import copy
+import json
 from collections.abc import Callable
 
 import httpx
@@ -193,3 +194,19 @@ VALID = {
     "job_everyday_model": "sample-local",
     "tavily_key": "tvly-sample",
 }
+
+
+PROFILE_SECTIONS = ("loved", "dealbreakers", "patterns", "hunches", "open_questions")
+
+
+def profile_reply(changelog: str = "Learned from new reviews.", **sections) -> str:
+    """A model's reply in the `ProfileUpdate` shape, as JSON text.
+
+    Each keyword is one of the five profile sections (`loved`, `dealbreakers`, `patterns`,
+    `hunches`, `open_questions`) and holds its lines. A section left out is an empty list.
+    """
+    unknown = set(sections) - set(PROFILE_SECTIONS)
+    if unknown:
+        raise TypeError(f"Not profile sections: {sorted(unknown)}")
+    profile = {name: sections.get(name, []) for name in PROFILE_SECTIONS}
+    return json.dumps({"profile": profile, "changelog": changelog})
