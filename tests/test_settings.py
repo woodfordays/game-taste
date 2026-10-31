@@ -15,7 +15,10 @@ from app.services.ai_setup import KEY_UNREADABLE
 from app.services.library import (
     KEY_MISSING,
     PROFILE_MISSING,
+    StoredSteam,
     save_steam_settings,
+    steam_credentials,
+    stored_steam,
 )
 from app.services.people import add_group, add_person, group_member_ids, list_groups
 from app.services.secrets import Vault, verify_password
@@ -37,7 +40,7 @@ OTHER_STEAMID = "76561198000000002"
 REGION_INVALID = "Enter a two-letter country code, like us or gb."
 TIME_INVALID = "Enter a time like 04:00."
 TIMEZONE_INVALID = "Pick a timezone from the list."
-WRONG_CURRENT = "Your current password didn't match."
+WRONG_CURRENT = "Your current password didn't match. Try again."
 
 
 def page(client) -> str:
@@ -696,17 +699,107 @@ def test_the_saved_key_typed_again_is_not_echoed(
     assert "steam-sample" not in r.text and "Saved key ending in mple" in r.text
 
 
-def test_a_saved_key_that_cannot_be_read_counts_as_not_connected(onboarded_client, db):
+def unreadable_steam_key(db) -> None:
+    """Leave a saved Steam key this app's key file can't read, as after replacing secret.key."""
     set_secret(db, Vault(Fernet.generate_key()), "steam_api_key", "steam-old")
     set_setting(db, "steam_id", STEAMID)
+
+
+def key_input(text: str) -> str:
+    return re.search(r"<input[^>]*name=\"steam_key\"[^>]*>", text)[0]
+
+
+def test_an_unreadable_saved_key_is_named_and_the_connection_is_kept(
+    onboarded_client, db
+):
+    unreadable_steam_key(db)
     r = onboarded_client.get("/settings")
     text = html.unescape(r.text)
-    assert r.status_code == 200 and "Steam isn't connected" in text
-    # So a profile alone is not enough: the key has to be entered again.
+    assert r.status_code == 200
+    assert KEY_UNREADABLE in text
+    assert f"Connected as {STEAMID}" in text and "Steam isn't connected" not in text
+    # The message belongs to the key field, and showing the page doesn't grab the focus.
+    assert 'aria-invalid="true"' in key_input(text)
+    assert "autofocus" not in key_input(text)
+    assert "steam-old" not in text
+
+
+def test_a_new_key_with_a_blank_profile_uses_the_saved_steam_id(
+    onboarded_client, db, app, fake_steam
+):
+    unreadable_steam_key(db)
     text = post(
-        onboarded_client, "/settings/steam", steam_form(steam_profile=OTHER_STEAMID)
+        onboarded_client, "/settings/steam", steam_form(steam_key="steam-new1234")
     )
-    assert KEY_MISSING in text
+    assert {r.url.params.get("steamid") for r in fake_steam.requests} == {STEAMID}
+    assert f"Connected as {STEAMID}" in text and "Saved key ending in 1234" in text
+    assert KEY_UNREADABLE not in text and PROFILE_MISSING not in text
+    db.expire_all()
+    assert get_secret(db, app.state.vault, "steam_api_key") == "steam-new1234"
+
+
+def test_a_profile_with_an_unreadable_saved_key_asks_for_the_key_again(
+    onboarded_client, db, fake_steam
+):
+    unreadable_steam_key(db)
+    text = post(
+        onboarded_client,
+        "/settings/steam",
+        steam_form(steam_profile=OTHER_STEAMID, store_region="gb"),
+    )
+    assert KEY_UNREADABLE in text and KEY_MISSING not in text
+    assert f'value="{OTHER_STEAMID}"' in text  # what was typed stays
+    assert fake_steam.requests == []
+    db.expire_all()
+    assert get_setting(db, "steam_id") == STEAMID
+    assert get_setting(db, "store_region") is None
+
+
+def test_the_region_alone_still_saves_with_an_unreadable_saved_key(
+    onboarded_client, db, fake_steam
+):
+    unreadable_steam_key(db)
+    text = post(onboarded_client, "/settings/steam", steam_form(store_region="gb"))
+    assert "Store region saved." in text and fake_steam.requests == []
+    assert KEY_UNREADABLE in text  # the key still needs entering
+    db.expire_all()
+    assert get_setting(db, "store_region") == "gb"
+
+
+def test_a_typed_key_that_fails_is_not_also_called_unreadable(
+    onboarded_client, db, fake_steam
+):
+    unreadable_steam_key(db)
+    fake_steam.fail_with(401)
+    text = post(
+        onboarded_client, "/settings/steam", steam_form(steam_key="steam-typed-5678")
+    )
+    assert "Steam refused the API key" in text and KEY_UNREADABLE not in text
+    assert 'value="steam-typed-5678"' in text
+
+
+def test_an_unreadable_saved_key_still_counts_as_not_connected_elsewhere(
+    onboarded_client, db, app, fake_steam
+):
+    unreadable_steam_key(db)
+    assert steam_credentials(db, app.state.vault) is None  # what Library relies on
+    text = html.unescape(onboarded_client.get("/library").text)
+    assert "Connect Steam in Settings to import your library." in text
+    assert "Re-sync library" not in text
+
+
+def test_stored_steam_reads_the_key_and_the_id_separately(db, app):
+    vault = app.state.vault
+    assert stored_steam(db, vault) == StoredSteam(None, None, False)
+    set_setting(db, "steam_id", STEAMID)
+    assert stored_steam(db, vault) == StoredSteam(None, STEAMID, False)
+    set_secret(db, vault, "steam_api_key", "steam-sample")
+    assert stored_steam(db, vault) == StoredSteam("steam-sample", STEAMID, False)
+    unreadable_steam_key(db)
+    assert stored_steam(db, vault) == StoredSteam(None, STEAMID, True)
+    # A value saved as plain text can't be decrypted either.
+    set_setting(db, "steam_api_key", "not-encrypted")
+    assert stored_steam(db, vault) == StoredSteam(None, STEAMID, True)
 
 
 def test_steam_htmx_swaps_just_the_section_with_status_200(
@@ -932,6 +1025,7 @@ def test_adding_a_group_with_members(onboarded_client, db, people):
         ("New", ["999999"], "Pick people from your list."),
         ("New", ["x"], "Pick people from your list."),
         ("New", [str(2**80)], "Pick people from your list."),
+        ("New", ["9" * 5000], "Pick people from your list."),
     ],
 )
 def test_a_refused_group_is_explained_and_keeps_what_was_typed(
@@ -1010,7 +1104,7 @@ def test_unticking_everyone_empties_the_group(onboarded_client, db, people):
     assert group_member_ids(db, crew.id) == []
 
 
-@pytest.mark.parametrize("bad", ["999999", "x", "-1", str(2**80), ""])
+@pytest.mark.parametrize("bad", ["999999", "x", "-1", str(2**80), "", "9" * 5000])
 def test_a_refused_member_list_is_explained_and_changes_nothing(
     onboarded_client, db, people, bad
 ):
@@ -1034,7 +1128,9 @@ def test_unknown_people_and_groups_are_not_found(onboarded_client, db, people):
         assert onboarded_client.post(path, data={"name": "X"}).status_code == 404, path
 
 
-@pytest.mark.parametrize("bad_id", ["0", "-1", str(2**63), str(2**70), "x", "1.5"])
+@pytest.mark.parametrize(
+    "bad_id", ["0", "-1", str(2**63), str(2**70), "x", "1.5", "9" * 5000]
+)
 def test_an_id_that_cannot_be_one_is_refused_not_a_server_error(
     onboarded_client, bad_id
 ):

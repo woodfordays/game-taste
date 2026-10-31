@@ -19,13 +19,14 @@ from app.db import get_db
 from app.models import NamedGroup, Person
 from app.routes.onboarding import ai_provider_row
 from app.services.ai_setup import (
+    KEY_UNREADABLE,
     AiSubmitResult,
     ai_form_view,
     saved_key_hint,
     stored_ai_setup,
     submit_ai_form,
 )
-from app.services.library import save_steam_settings, steam_credentials
+from app.services.library import save_steam_settings, stored_steam
 from app.services.people import (
     PICK_PEOPLE,
     PeopleError,
@@ -74,7 +75,7 @@ REGION_INVALID = "Enter a two-letter country code, like us or gb."
 TIME_INVALID = "Enter a time like 04:00."
 TIMEZONE_INVALID = "Pick a timezone from the list."
 TIMEZONE_CHOOSE = "Choose a timezone"
-WRONG_CURRENT_PASSWORD = "Your current password didn't match."
+WRONG_CURRENT_PASSWORD = "Your current password didn't match. Try again."
 NO_SUCH_PERSON = "No such person."
 NO_SUCH_GROUP = "No such group."
 
@@ -106,6 +107,9 @@ class SteamView:
     region_error: str | None = None
     error: str | None = None  # what Steam said when it refused
     saved: str | None = None  # what a save did, in a sentence
+    # The field a refused save sends the focus to ("key", "profile" or "region"). A note
+    # shown on a plain visit, such as an unreadable saved key, takes no focus.
+    focus: str | None = None
 
 
 @dataclass
@@ -177,18 +181,32 @@ def _ai_context(
 def _steam_context(
     request: Request, db: Session, *, key: str = "", region: str | None = None, **state
 ) -> dict:
-    saved_key, steam_id = steam_credentials(db, request.app.state.vault) or (None, None)
+    saved = stored_steam(db, request.app.state.vault)
     if region is None:
         region = (
             get_setting(db, STORE_REGION_SETTING, DEFAULT_STORE_REGION)
             or DEFAULT_STORE_REGION
         )
+    # The first field a refusal names gets the focus.
+    focus = next(
+        (
+            field
+            for field in ("key", "profile", "region")
+            if state.get(f"{field}_error")
+        ),
+        None,
+    )
+    if saved.key_unreadable and not key:
+        # Said whenever no key is typed, like the AI form does, and never when the key
+        # the user typed is the one being tried.
+        state["key_error"] = state.get("key_error") or KEY_UNREADABLE
     view = SteamView(
-        steam_id=steam_id,
-        key_hint=saved_key_hint(saved_key),
+        steam_id=saved.steam_id,
+        key_hint=saved_key_hint(saved.api_key),
         # The saved key typed again is the saved key, which is never shown.
-        key="" if key == saved_key else key,
+        key="" if key == saved.api_key else key,
         region=region,
+        focus=focus,
         **state,
     )
     return {"steam": view}

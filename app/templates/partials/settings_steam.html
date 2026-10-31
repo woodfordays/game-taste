@@ -1,7 +1,7 @@
 {#- The Steam section of Settings. A save swaps this whole form, so it carries its own notices and errors.
     Context: `steam`, a SteamView: `steam_id` (the saved SteamID64, or none) and `key_hint` ("Saved key ending in abcd", or empty)
     describe what is saved; `key`, `profile` and `region` are the fields' values; `key_error`, `profile_error`, `region_error`
-    (a field's problem), `error` (what Steam said) and `saved` (what a save did) may be none. The saved key is never rendered. -#}
+    (a field's problem), `error` (what Steam said), `saved` (what a save did) and `focus` (the field to focus: "key", "profile" or "region") may be none. The saved key is never rendered. -#}
 {% from "partials/field.html" import field %}
 {% from "partials/settings_alerts.html" import saved_alert, failed_alert %}
 <form id="settings-steam" class="settings-form" method="post" action="/settings/steam"
@@ -20,11 +20,11 @@
   {% endif %}
 
   {#- new-password keeps browsers from filling the login password into a key field. -#}
-  {{ field("steam-key", "steam_key", "Steam Web API key", type="password", value=steam.key, placeholder=steam.key_hint, error=steam.key_error, hint=("Leave this empty to keep the saved key." if steam.key_hint else "Create one at steamcommunity.com/dev/apikey."), autocomplete="new-password", required=false, autofocus=steam.key_error, mono=true) }}
+  {{ field("steam-key", "steam_key", "Steam Web API key", type="password", value=steam.key, placeholder=steam.key_hint, error=steam.key_error, hint=("Leave this empty to keep the saved key." if steam.key_hint else "Create one at steamcommunity.com/dev/apikey."), autocomplete="new-password", required=false, autofocus=(steam.focus == "key"), mono=true) }}
 
-  {{ field("steam-profile", "steam_profile", "Steam profile link or SteamID64", value=steam.profile, error=steam.profile_error, hint=("Leave this empty to keep your current profile, or paste a link, a custom URL name or a 17-digit SteamID64 to change it." if steam.steam_id else "Paste your profile link, your custom URL name or your 17-digit SteamID64."), autocomplete="off", required=false, autofocus=steam.profile_error and not steam.key_error, mono=true) }}
+  {{ field("steam-profile", "steam_profile", "Steam profile link or SteamID64", value=steam.profile, error=steam.profile_error, hint=("Leave this empty to keep your current profile, or paste a link, a custom URL name or a 17-digit SteamID64 to change it." if steam.steam_id else "Paste your profile link, your custom URL name or your 17-digit SteamID64."), autocomplete="off", required=false, autofocus=(steam.focus == "profile"), mono=true) }}
 
-  {{ field("store-region", "store_region", "Store region", value=steam.region, error=steam.region_error, hint="Two letters, like us or gb. Steam store search uses it for prices.", autocomplete="off", autofocus=steam.region_error, mono=true) }}
+  {{ field("store-region", "store_region", "Store region", value=steam.region, error=steam.region_error, hint="Two letters, like us or gb. Steam store search uses it for prices.", autocomplete="off", autofocus=(steam.focus == "region"), mono=true) }}
 
   <div class="settings-actions">
     <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Save Steam settings</span></button>

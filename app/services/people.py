@@ -88,7 +88,12 @@ def parse_member_ids(values: Iterable[object]) -> tuple[list[int], bool]:
     clean = True
     for value in values:
         if isinstance(value, str) and value.isascii() and value.isdecimal():
-            ids.append(int(value))
+            try:
+                ids.append(int(value))
+            except ValueError:
+                # Python won't convert a string of more than 4300 digits. No person has
+                # such an id, so it is a value that isn't one.
+                clean = False
         else:
             clean = False
     return ids, clean

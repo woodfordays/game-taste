@@ -631,7 +631,9 @@ def test_a_duplicate_group_is_explained_and_the_typed_name_stays(two_people, db)
     assert [p.name for p in members] == ["Sam"]  # the refused attempt changed nothing
 
 
-@pytest.mark.parametrize("member", ["999", "abc", "", "-1", "1.5", str(10**30)])
+@pytest.mark.parametrize(
+    "member", ["999", "abc", "", "-1", "1.5", str(10**30), "9" * 5000]
+)
 def test_an_unknown_member_is_refused_with_nothing_saved(two_people, db, member):
     client, ids = two_people
     r = client.post(
@@ -727,6 +729,13 @@ def test_parse_member_ids_flags_anything_else(bad):
     # Only a request made outside the form can send one of these. The numbers that were
     # fine still come back; the flag says the list can't be trusted.
     assert parse_member_ids(["7", bad]) == ([7], False)
+
+
+@pytest.mark.parametrize("digits", [4301, 5000])
+def test_parse_member_ids_flags_a_number_too_long_to_convert(digits):
+    # int() refuses more than 4300 digits. No person has such an id, so it is flagged
+    # like any other value that isn't one, never raised.
+    assert parse_member_ids(["7", "9" * digits]) == ([7], False)
 
 
 def test_parse_member_ids_takes_a_huge_number_as_a_number():

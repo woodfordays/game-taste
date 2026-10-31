@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import CurrentlyPlayingChange, Game, PlaytimeSnapshot, Review
+from app.services.ai_setup import KEY_UNREADABLE
 from app.services.secrets import Vault
 from app.services.settings import (
     STORE_REGION_SETTING,
@@ -108,20 +109,46 @@ def connect_steam(
     return result
 
 
+@dataclass
+class StoredSteam:
+    """What is saved about the Steam connection, the key and the SteamID64 apart.
+
+    `api_key` is None when none is saved or the saved one can't be read; `key_unreadable`
+    tells those apart. `steam_id` is None when none is saved.
+    """
+
+    api_key: str | None
+    steam_id: str | None
+    key_unreadable: bool = False
+
+
+def stored_steam(db: Session, vault: Vault) -> StoredSteam:
+    """The saved Steam key and SteamID64, each on its own.
+
+    A key that can't be decrypted, such as one saved under another key file, comes back
+    as no key with `key_unreadable` set, and the SteamID64 is still returned: it is a
+    plain setting and the user doesn't have to enter it again.
+    """
+    api_key: str | None
+    try:
+        api_key = get_secret(db, vault, STEAM_KEY_SETTING) or None
+        unreadable = False
+    except InvalidToken:
+        api_key, unreadable = None, True
+    return StoredSteam(api_key, get_setting(db, STEAM_ID_SETTING) or None, unreadable)
+
+
 def steam_credentials(db: Session, vault: Vault) -> tuple[str, str] | None:
     """The saved Steam API key and SteamID64, or None when Steam isn't connected.
 
     A key that can't be decrypted, such as one saved under another key file, counts
-    as not connected: the user has to enter it again either way.
+    as not connected: the user has to enter it again either way, and nothing can be
+    synced with it. (Settings reads the two apart with `stored_steam`.)
     """
-    try:
-        api_key = get_secret(db, vault, STEAM_KEY_SETTING)
-    except InvalidToken:
+    saved = stored_steam(db, vault)
+    if not saved.api_key or not saved.steam_id:
         return None
-    steamid = get_setting(db, STEAM_ID_SETTING)
-    if not api_key or not steamid:
-        return None
-    return api_key, steamid
+    return saved.api_key, saved.steam_id
 
 
 @dataclass
@@ -156,7 +183,8 @@ def save_steam_settings(
     """Save the Steam section of Settings: the store region, and the connection when asked.
 
     `region` must already be valid (see `parse_region`). A blank `api_key` keeps the
-    saved key and a blank `profile` keeps the saved SteamID. With both blank only the
+    saved key and a blank `profile` keeps the saved SteamID (which stays usable when the
+    saved key can't be read, and then a key must be typed). With both blank only the
     region is saved, whether or not Steam is connected. Otherwise Steam is connected
     again with whatever is typed over what is saved (`connect_steam`), and the region is
     saved with it. If that can't be done, nothing is saved, the region included.
@@ -166,12 +194,19 @@ def save_steam_settings(
         set_setting(db, STORE_REGION_SETTING, region)
         return SteamSave()
 
-    saved = steam_credentials(db, vault)
-    api_key = api_key or (saved[0] if saved else "")
-    profile = profile or (saved[1] if saved else "")
+    saved = stored_steam(db, vault)
+    api_key = api_key or saved.api_key or ""
+    profile = profile or saved.steam_id or ""
     if not api_key or not profile:
         return SteamSave(
-            key_error=None if api_key else KEY_MISSING,
+            # A key that is saved but can't be read says so, rather than "enter your key".
+            key_error=(
+                None
+                if api_key
+                else KEY_UNREADABLE
+                if saved.key_unreadable
+                else KEY_MISSING
+            ),
             profile_error=None if profile else PROFILE_MISSING,
         )
     try:
