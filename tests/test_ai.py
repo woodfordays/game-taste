@@ -2,6 +2,8 @@ import hashlib
 import socket
 from types import SimpleNamespace
 
+import anthropic
+import openai
 import pytest
 from anthropic.resources.messages import Messages as AnthropicMessages
 from google.genai.models import Models as GeminiModels
@@ -13,6 +15,7 @@ from app.main import Services, default_services
 from app.models import AiCall
 from app.services.ai import (
     CHECK_TIMEOUT_SECONDS,
+    CONNECT_TIMEOUT_SECONDS,
     JOB_LABELS,
     MAX_OUTPUT_TOKENS,
     PROVIDER_LABELS,
@@ -253,6 +256,10 @@ def _gemini_reply():
 
 # The next tests use the real SDK clients and replace only the method that would send the
 # request, so they show what timeout and retry settings that request would run with.
+# A timeout keeps the SDKs' short connect limit, so an unreachable host fails fast. Each
+# SDK takes only its own Timeout class.
+OPENAI_BOUNDED = openai.Timeout(12.5, connect=CONNECT_TIMEOUT_SECONDS)
+ANTHROPIC_BOUNDED = anthropic.Timeout(12.5, connect=CONNECT_TIMEOUT_SECONDS)
 
 
 def test_openai_adapter_applies_a_timeout_and_the_retries_setting(monkeypatch):
@@ -269,13 +276,13 @@ def test_openai_adapter_applies_a_timeout_and_the_retries_setting(monkeypatch):
 
     # A timeout with retries off: both apply.
     adapter.complete("sample-model", "Say hi", timeout=12.5, retries=False)
-    assert seen[-1][1:] == (12.5, 0)
+    assert seen[-1][1:] == (OPENAI_BOUNDED, 0)
 
     # A timeout with retries on (the default): the SDK keeps its own retries.
     adapter.complete("sample-model", "Say hi", timeout=12.5)
-    assert seen[-1][1:] == (12.5, base.max_retries)
+    assert seen[-1][1:] == (OPENAI_BOUNDED, base.max_retries)
     adapter.complete("sample-model", "Say hi", timeout=12.5, retries=True)
-    assert seen[-1][1:] == (12.5, base.max_retries)
+    assert seen[-1][1:] == (OPENAI_BOUNDED, base.max_retries)
 
     # Retries off alone: the SDK keeps its own timeout.
     adapter.complete("sample-model", "Say hi", retries=False)
@@ -301,10 +308,10 @@ def test_anthropic_adapter_applies_a_timeout_and_the_retries_setting(monkeypatch
     assert base.max_retries > 0
 
     adapter.complete("sample-model", "Say hi", timeout=12.5, retries=False)
-    assert seen[-1][1:] == (12.5, 0)
+    assert seen[-1][1:] == (ANTHROPIC_BOUNDED, 0)
 
     adapter.complete("sample-model", "Say hi", timeout=12.5)
-    assert seen[-1][1:] == (12.5, base.max_retries)
+    assert seen[-1][1:] == (ANTHROPIC_BOUNDED, base.max_retries)
 
     adapter.complete("sample-model", "Say hi", retries=False)
     assert seen[-1][1:] == (base.timeout, 0)

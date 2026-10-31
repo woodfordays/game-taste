@@ -26,6 +26,9 @@ CHECK_TIMEOUT_SECONDS = 30
 # never returns can't hold the worker for good. It matches the OpenAI and Anthropic SDK
 # defaults. Gemini's SDK has no timeout of its own. The SDK's retries stay on.
 JOB_CALL_TIMEOUT_SECONDS = 600
+# Connecting gives up sooner, as in the OpenAI and Anthropic SDK defaults, so a host that
+# never answers fails in seconds rather than minutes.
+CONNECT_TIMEOUT_SECONDS = 5
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 CONNECTION_TEST_PROMPT = "Reply with the single word: ok"
 LOCAL_URL_HINT = "Check the URL. Most local servers end in /v1."
@@ -93,9 +96,10 @@ class Adapter(Protocol):
     ) -> Completion:
         """Ask the model.
 
-        A `timeout` (seconds) is how long the call may take. `None` keeps the SDK's own
-        timeout. `retries=False` turns the SDK's retries off for the call, so a failure
-        comes back at once. `retries=True` keeps the SDK's own retry behavior.
+        A `timeout` (seconds) bounds each wait in the call: connecting, sending, and the
+        model's reply. `None` keeps the SDK's own timeout. `retries=False` turns the SDK's
+        retries off for the call, so a failure comes back at once. `retries=True` keeps the
+        SDK's own retry behavior.
         """
         ...
 
@@ -127,14 +131,20 @@ class CheckResult:
 # The adapters build their SDK client on first use, so making one never touches the network.
 
 
-def _with_call_options(client: Any, timeout: float | None, retries: bool) -> Any:
+def _with_call_options(
+    client: Any, timeout: float | None, retries: bool, timeout_type: Any
+) -> Any:
     """An OpenAI or Anthropic client set up for one call: the same one if nothing changes.
 
-    `with_options` makes a copy, so the shared client is never altered.
+    `with_options` makes a copy, so the shared client is never altered. A bare number would
+    also stretch the SDK's short connect limit, so connecting keeps its own. `timeout_type`
+    is the SDK's own `Timeout` class, since each SDK accepts only its own.
     """
     options: dict[str, Any] = {}
     if timeout is not None:
-        options["timeout"] = timeout
+        options["timeout"] = timeout_type(
+            timeout, connect=min(timeout, CONNECT_TIMEOUT_SECONDS)
+        )
     if not retries:
         options["max_retries"] = 0
     return client.with_options(**options) if options else client
@@ -163,7 +173,9 @@ class OpenAICompatibleAdapter:
         timeout: float | None = None,
         retries: bool = True,
     ) -> Completion:
-        client = _with_call_options(self._get_client(), timeout, retries)
+        from openai import Timeout
+
+        client = _with_call_options(self._get_client(), timeout, retries, Timeout)
         response = client.chat.completions.create(
             model=model, messages=[{"role": "user", "content": prompt}]
         )
@@ -199,7 +211,9 @@ class AnthropicAdapter:
         timeout: float | None = None,
         retries: bool = True,
     ) -> Completion:
-        client = _with_call_options(self._get_client(), timeout, retries)
+        from anthropic import Timeout
+
+        client = _with_call_options(self._get_client(), timeout, retries, Timeout)
         response = client.messages.create(
             model=model,
             max_tokens=MAX_OUTPUT_TOKENS,
