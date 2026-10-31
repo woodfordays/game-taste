@@ -604,7 +604,7 @@ def test_a_full_page_resync_puts_the_toast_in_the_toast_region(
 ):
     text = html.unescape(onboarded_client.post("/library/sync").text)
     assert "<html" in text and "<h1" in text
-    region = re.search(r'<div id="toasts".*?</div>\s*<script', text, re.S)[0]
+    region = re.search(r'<div id="toasts".*?</div>\s*</section>', text, re.S)[0]
     assert "Library synced: 0 new, 2 total." in region
 
 

@@ -78,6 +78,14 @@ _CHOICES = {
     "complexity": COMPLEXITIES,
 }
 
+# What the dialog's choice lists show: (value, label) for each allowed value, in order. A
+# label is the value with spaces for underscores and a capital first letter ("too_light"
+# is "Too light"), so a value added above appears in the dialog with no template change.
+CHOICE_OPTIONS = {
+    name: [(value, value.replace("_", " ").capitalize()) for value in values]
+    for name, values in _CHOICES.items()
+}
+
 RATING_INVALID = "Pick a rating from 1 to 10."
 NOTHING_TO_PUBLISH = "Add a rating or a few words before publishing."
 OPTION_INVALID = "Pick one of the listed options."

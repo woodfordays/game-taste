@@ -26,6 +26,7 @@ from app.services.people import (
     list_people,
 )
 from app.services.reviews import (
+    CHOICE_OPTIONS,
     LANE_LABELS,
     OPTION_INVALID,
     RATING_INVALID,
@@ -45,7 +46,7 @@ from app.services.reviews import (
     save_draft,
 )
 from app.services.tags import normalize_tags
-from app.web import is_htmx, read_form, render
+from app.web import is_htmx, parse_id, read_form, render
 
 router = APIRouter()
 
@@ -82,9 +83,18 @@ def _choice(form: FormData, name: str) -> str | None:
     return _text(form, name) or None
 
 
-def _ids(values: list) -> list[int]:
-    """Whole numbers from posted values, ignoring blanks. `ValueError` for anything else."""
-    return [int(value) for value in values if isinstance(value, str) and value.strip()]
+def _ids(values: list) -> list[int] | None:
+    """The ids in posted values, ignoring blanks. None if any other value isn't an id
+    (see `parse_id`)."""
+    ids = []
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        parsed = parse_id(value)
+        if parsed is None:
+            return None
+        ids.append(parsed)
+    return ids
 
 
 def form_from_request(form: FormData) -> ReviewForm:
@@ -92,10 +102,10 @@ def form_from_request(form: FormData) -> ReviewForm:
 
     The tags input is named `tags` (it becomes `tags_raw`), empty choices are None, and
     text (`text`, `group_text`, `session_length`, `tags`) is passed through exactly as
-    posted. A rating, a person or a group that isn't a whole number raises
-    `FormInputError` (the rating's message first) with everything else that was read, so
-    the dialog can show it again. Whether a number is a valid rating, person or group is
-    for the service to say.
+    posted. A rating that isn't a whole number, or a person or a group that isn't a usable
+    id (`parse_id`), raises `FormInputError` (the rating's message first) with everything
+    else that was read, so the dialog can show it again. Whether a rating is from 1 to 10,
+    and whether a person or group exists, is for the service to say.
     """
     review = ReviewForm(
         text=_text(form, "text"),
@@ -113,15 +123,16 @@ def form_from_request(form: FormData) -> ReviewForm:
         review.rating = int(rating) if rating else None
     except ValueError:
         problems.append(RATING_INVALID)
-    try:
-        review.people = _ids(form.getlist("people"))
-    except ValueError:
+    people = _ids(form.getlist("people"))
+    if people is None:
         problems.append(PICK_PEOPLE)
-    try:
-        group = _text(form, "named_group_id")
-        review.named_group_id = int(group) if group.strip() else None
-    except ValueError:
-        problems.append(PICK_PEOPLE)
+    else:
+        review.people = people
+    group = _text(form, "named_group_id")
+    if group.strip():
+        review.named_group_id = parse_id(group)
+        if review.named_group_id is None:
+            problems.append(PICK_PEOPLE)
     if problems:
         raise FormInputError(problems[0], review)
     return review
@@ -269,6 +280,7 @@ def _dialog(
         locked=who.locked,
         chosen_group=who.group,
         hint=who.hint,
+        choices=CHOICE_OPTIONS,
         details_open=_has_details(form, coop) or error in (OPTION_INVALID, PICK_PEOPLE),
     )
     if refresh_card:
@@ -381,12 +393,16 @@ def people_options(
 ):
     """The "who played" checkboxes with the named group's members added to the people
     already ticked (and locked, since the group counts them), and the head-count hint for
-    `lane`. `people` is only the extras: a locked box isn't sent."""
-    try:
-        ticked = _ids(people)
-        group_id = int(named_group_id) if named_group_id.strip() else None
-    except ValueError:
-        raise HTTPException(status_code=400, detail=PICK_PEOPLE) from None
+    `lane`. `people` is only the extras: a locked box isn't sent.
+
+    A person that isn't a usable id, or a group that isn't a number, is a bad request. A
+    group number that no group could have (zero, or past what the database holds) is a
+    group that doesn't exist, like any other number nobody has: it adds no one."""
+    ticked = _ids(people)
+    group_text = named_group_id.strip()
+    group_id = parse_id(group_text)
+    if ticked is None or (group_text and group_id is None and not group_text.isdigit()):
+        raise HTTPException(status_code=400, detail=PICK_PEOPLE)
     who = _who_played(db, lane, ticked, group_id)
     return render(
         request,

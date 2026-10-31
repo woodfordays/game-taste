@@ -2,7 +2,8 @@
     `message` is plain text and is escaped, because it can quote what the user typed or what Steam said.
     `tone` is "success" or "danger". A success toast clears itself after six seconds; a danger toast stays until
     it is dismissed, so the user can read what to do. `oob=true` wraps the toast so htmx appends it to #toasts
-    when it arrives inside another response; a page rendered in full puts it there with {% block toasts %}. -#}
+    when it arrives inside another response; a page rendered in full puts it there with {% block toasts %}. The danger toast that
+    base.html's script adds when a request fails is built there with this markup, so a change here belongs there too. -#}
 {% macro toast_item(message, tone="success", oob=false) -%}
 {%- if oob %}<div hx-swap-oob="beforeend:#toasts">{% endif -%}
 <div class="em-toast em-toast--{{ tone }}"{% if tone != "danger" %} hx-on::load="setTimeout(() => this.remove(), 6000)"{% endif %}>

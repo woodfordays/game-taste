@@ -44,7 +44,11 @@
   </div>
   {% endblock %}
   <div id="dialog"></div>
-  <div id="toasts" class="em-toast-region" aria-live="polite" aria-relevant="additions">{% block toasts %}{% endblock %}</div>
+  {#- Ember's ToastRegion: a popover, so it floats in the top layer. #toasts is its list, which is where toasts are put, by a page
+      that comes with one ({% block toasts %}), by an out-of-band swap (`beforeend:#toasts`) and by the script below. -#}
+  <section id="toast-region" class="em-toast-region" popover="manual" aria-label="Notifications">
+    <div id="toasts" class="em-toast-region__list" aria-live="polite" aria-relevant="additions">{% block toasts %}{% endblock %}</div>
+  </section>
   <script>
     (function () {
       var button = document.getElementById("theme-toggle");
@@ -57,6 +61,72 @@
         button.setAttribute("aria-label", label);
         button.setAttribute("title", label);
       });
+    })();
+  </script>
+  <script>
+    // Toasts: kept above everything, and one for each request that fails.
+    (function () {
+      var region = document.getElementById("toast-region");
+      var list = document.getElementById("toasts");
+
+      // A popover sits in the top layer in the order it was shown, and a modal dialog opened later sits above it. Hiding the region
+      // and showing it again puts it last, so a toast that arrives while a dialog is open is drawn over the dialog. Nothing is painted
+      // between the two calls, so toasts already on screen don't animate in again.
+      function raise() {
+        if (typeof region.showPopover !== "function") return; // Without popovers the region is fixed above the page by z-index.
+        try { region.hidePopover(); } catch (error) { /* it was not open */ }
+        try { region.showPopover(); } catch (error) { /* it is already open */ }
+      }
+      raise();
+      new MutationObserver(function (records) {
+        if (records.some(function (record) { return record.addedNodes.length > 0; })) raise();
+      }).observe(list, { childList: true });
+
+      // A modal dialog makes everything outside it inert, a toast drawn over it included. The toast can't be clicked, and a click on it
+      // lands on whatever the dialog has underneath, such as Publish review. So while a dialog is open the click is caught here before
+      // it gets there: on a toast's Dismiss button it dismisses the toast, and anywhere else on a toast it does nothing.
+      function over(element, event) {
+        var box = element.getBoundingClientRect();
+        return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+      }
+      document.addEventListener("click", function (event) {
+        if (!document.querySelector("dialog[open]")) return;
+        for (var toast = list.firstElementChild; toast; toast = toast.nextElementSibling) {
+          if (!over(toast, event)) continue;
+          event.preventDefault();
+          event.stopPropagation();
+          var close = toast.querySelector(".em-toast__close");
+          if (close && over(close, event)) toast.remove();
+          return;
+        }
+      }, true);
+
+      // The same markup as the toast macro in partials/toast.html, for a danger toast. A danger toast stays until it is dismissed.
+      var ICON = '<svg class="em-icon em-toast__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>';
+      var CLOSE = '<svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>';
+      function addToast(message, tone) {
+        var toast = document.createElement("div");
+        toast.className = "em-toast em-toast--" + tone;
+        toast.innerHTML = ICON + '<div class="em-toast__content"><p class="em-toast__title text-label"></p></div>' +
+          '<button type="button" aria-label="Dismiss" class="em-btn em-btn--ghost em-btn--sm em-btn--icon em-toast__close">' + CLOSE + '</button>';
+        toast.querySelector(".em-toast__title").textContent = message;
+        toast.querySelector(".em-toast__close").addEventListener("click", function () { toast.remove(); });
+        list.appendChild(toast);
+      }
+
+      // htmx reports one failure as htmx:responseError (the server answered with an error status) or htmx:sendError (it could not
+      // be reached), and may report both for the same request. Both carry the request, so a request that already has its toast is skipped.
+      var reported = new WeakSet();
+      function failed(event) {
+        var request = event.detail && (event.detail.xhr || event.detail.requestConfig);
+        if (request) {
+          if (reported.has(request)) return;
+          reported.add(request);
+        }
+        addToast("Something went wrong. Try again.", "danger");
+      }
+      document.addEventListener("htmx:responseError", failed);
+      document.addEventListener("htmx:sendError", failed);
     })();
   </script>
 </body>

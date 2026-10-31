@@ -1,5 +1,7 @@
 """Page rendering: templates, the render()/redirect() helpers and the display filters."""
 
+import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -17,6 +19,13 @@ from app.services.settings import get_setting
 APP_DIR = Path(__file__).parent
 TEMPLATES_DIR = APP_DIR / "templates"
 STATIC_DIR = APP_DIR / "static"
+
+# httpx logs every request's URL at INFO, and a Steam call carries the API key in its URL.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+# SQLite integers are 64-bit, so an id past this could not be a row's.
+MAX_ID = 2**63 - 1
+_ID = re.compile(r"[0-9]{1,19}")  # MAX_ID has 19 digits
 
 # Starlette creates the Jinja environment with autoescape on.
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -107,6 +116,23 @@ def render(request: Request, name: str, status_code: int = 200, **ctx) -> HTMLRe
     }
     context.update(ctx)
     return templates.TemplateResponse(request, name, context, status_code=status_code)
+
+
+def parse_id(value: object) -> int | None:
+    """A database id from posted or typed text: a whole number from 1 to 2**63 - 1.
+
+    Surrounding whitespace is ignored. Anything else is None: not text, blank, signs,
+    decimals, digits other than 0-9, zero, or a number the database could not hold
+    (including text so long it would not be worth converting). Casting ids with `int()`
+    instead lets a huge one through to SQLite, which raises, and a request answers 500.
+    """
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not _ID.fullmatch(text):
+        return None
+    number = int(text)
+    return number if 1 <= number <= MAX_ID else None
 
 
 def is_htmx(request: Request) -> bool:

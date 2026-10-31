@@ -291,6 +291,6 @@ def test_card_focus_rules_never_remove_the_outline():
     focus_rules = [(s, d) for s, d in css_rules(".game-card") if "focus-visible" in s]
     assert focus_rules
     for selector, declarations in focus_rules:
-        assert not re.search(r"outline:\s*(none|0)", declarations), selector
+        assert not re.search(r"outline:\s*(none|0)\b", declarations), selector
     # The ::after fills the card, so a shadow there is the spot that gets clipped.
     assert not any("box-shadow" in d for s, d in focus_rules if s.endswith("::after"))

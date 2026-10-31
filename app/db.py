@@ -21,8 +21,14 @@ def make_engine(db_path: Path) -> Engine:
     )
 
     @event.listens_for(engine, "connect")
-    def enforce_foreign_keys(dbapi_connection, connection_record) -> None:
+    def configure_connection(dbapi_connection, connection_record) -> None:
         cursor = dbapi_connection.cursor()
+        # A writer waits up to five seconds for another one rather than failing at once. This
+        # comes first so that switching to WAL below waits too.
+        cursor.execute("PRAGMA busy_timeout=5000")
+        # WAL lets the background worker write while pages are being read. The mode is kept in
+        # the database file, so after the first connection this only confirms it.
+        cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 

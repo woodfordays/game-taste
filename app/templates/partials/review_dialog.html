@@ -9,7 +9,8 @@
     whether it is the current one), `note` (a line about what the lane holds, or none), `form` (the ReviewForm to show), `tags` (its
     normalized tags), `error` (a plain string or none), `switch_to` (a Lane when we are asking about unsaved changes, else none), `dirty`
     ("0" or "1"), `still` (the dialog is already on screen, so it doesn't rise again), `coop` (the lane has other players), `people`,
-    `groups`, `selected` and `hint` (for "who played"), and `details_open`.
+    `groups`, `selected` and `hint` (for "who played"), `choices` (the service's lists of (value, label) for `status`, `verdict`,
+    `walk_away` and `complexity`, which the template adds "Not set" to), and `details_open`.
 
     The lane buttons all take Tab, unlike Ember's roving focus, because choosing one asks the server and swaps the whole dialog, so an
     arrow key could not carry focus across.
@@ -156,13 +157,13 @@
           </summary>
           <div class="review-details__body">
             <div class="review-grid">
-              {{ select_field("review-status", "status", "Status", [("", "Not set"), ("finished", "Finished"), ("playing", "Playing"), ("demo", "Demo"), ("dropped", "Dropped")], selected=form.status) }}
-              {{ select_field("review-verdict", "verdict", "Verdict", [("", "Not set"), ("loved", "Loved"), ("liked", "Liked"), ("mixed", "Mixed"), ("disliked", "Disliked")], selected=form.verdict) }}
+              {{ select_field("review-status", "status", "Status", [("", "Not set")] + choices["status"], selected=form.status) }}
+              {{ select_field("review-verdict", "verdict", "Verdict", [("", "Not set")] + choices["verdict"], selected=form.verdict) }}
             </div>
             <p class="review-details__heading text-label">Feel</p>
             <div class="review-grid">
-              {{ select_field("review-walk-away", "walk_away", "Can you walk away mid-game?", [("", "Not set"), ("yes", "Yes"), ("partly", "Partly"), ("no", "No")], selected=form.walk_away) }}
-              {{ select_field("review-complexity", "complexity", "Complexity", [("", "Not set"), ("too_light", "Too light"), ("about_right", "About right"), ("too_much", "Too much")], selected=form.complexity) }}
+              {{ select_field("review-walk-away", "walk_away", "Can you walk away mid-game?", [("", "Not set")] + choices["walk_away"], selected=form.walk_away) }}
+              {{ select_field("review-complexity", "complexity", "Complexity", [("", "Not set")] + choices["complexity"], selected=form.complexity) }}
             </div>
             {{ field("review-session", "session_length", "Session or run length", value=form.session_length, required=false, optional=true, autocomplete="off", hint="For example, 45 minutes or one full run.") }}
 
