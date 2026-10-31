@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -6,7 +7,7 @@ from sqlalchemy import func, select
 
 from app.models import Game, PlaytimeSnapshot
 from app.services.library import SyncResult, artwork_url, sync_library
-from app.services.steam import SteamError
+from app.services.steam import OwnedGame, SteamError
 from conftest import FIXED_NOW
 
 LAST_PLAYED = 1768000000
@@ -198,6 +199,56 @@ def test_sync_commits(app, db, steam_client):
     with app.state.session_factory() as other:
         assert other.scalar(select(func.count()).select_from(Game)) == 2
         assert other.scalar(select(func.count()).select_from(PlaytimeSnapshot)) == 2
+
+
+def test_two_syncs_never_run_at_the_same_time(app):
+    # The refresh's sync and the Library's "Re-sync" can start together. The second waits.
+    inside = threading.Event()
+    release = threading.Event()
+    order: list[str] = []
+    fetches = 0
+
+    class BlockingSteam:
+        def owned_games(self, api_key, steamid):
+            nonlocal fetches
+            fetches += 1
+            number = fetches
+            order.append(f"fetch {number} starts")
+            if number == 1:
+                inside.set()
+                release.wait(timeout=10)
+            order.append(f"fetch {number} ends")
+            return [OwnedGame(10, "Sample Quest", 600, None)]
+
+    steam = BlockingSteam()
+
+    def sync() -> None:
+        with app.state.session_factory() as session:
+            sync_library(session, steam, "k", "id", FIXED_NOW)
+
+    first = threading.Thread(target=sync, daemon=True)
+    second = threading.Thread(target=sync, daemon=True)
+    try:
+        first.start()
+        assert inside.wait(timeout=10)  # the first sync is in Steam's hands
+        second.start()
+        second.join(timeout=0.5)
+        assert second.is_alive()  # still waiting for its turn
+        assert order == ["fetch 1 starts"]
+    finally:
+        release.set()
+    first.join(timeout=10)
+    second.join(timeout=10)
+    assert not first.is_alive() and not second.is_alive()
+    assert order == [
+        "fetch 1 starts",
+        "fetch 1 ends",
+        "fetch 2 starts",
+        "fetch 2 ends",
+    ]
+    with app.state.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(Game)) == 1
+        assert session.scalar(select(func.count()).select_from(PlaytimeSnapshot)) == 1
 
 
 def test_artwork_url():

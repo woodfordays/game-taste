@@ -1,5 +1,6 @@
 """The game library: connecting to Steam, syncing from it, and the artwork for each game."""
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -29,6 +30,9 @@ SOURCE_STORE_SEARCH = "store_search"
 KEY_MISSING = "Enter your Steam Web API key."
 PROFILE_MISSING = "Enter your Steam profile link or SteamID64."
 
+# One sync at a time, so the refresh's sync and the Library "Re-sync" can't interleave.
+_sync_lock = threading.Lock()
+
 
 @dataclass
 class SyncResult:
@@ -46,44 +50,50 @@ def sync_library(
     playtime snapshot is written only when a game is new or its playtime or last
     played time changed, so snapshots form a history rather than a copy per sync.
     Games Steam no longer lists are left as they are. Raises `SteamError`, with
-    nothing changed, when Steam can't be read.
+    nothing changed, when Steam can't be read. Only one sync runs at a time, so a second
+    caller waits for the first to finish.
     """
-    # Keyed by app id, so a repeated entry is one game.
-    owned = {game.appid: game for game in steam.owned_games(api_key, steamid)}
-    known = {game.appid: game for game in db.scalars(select(Game))}
-    added = updated = 0
-    for item in owned.values():
-        game = known.get(item.appid)
-        if game is None:
-            db.add(
-                Game(
-                    appid=item.appid,
-                    name=item.name,
-                    owned=True,
-                    playtime_minutes=item.playtime_minutes,
-                    last_played_at=item.last_played_at,
-                    source="steam_library",
-                    created_at=now,
+    with _sync_lock:
+        # Keyed by app id, so a repeated entry is one game.
+        owned = {game.appid: game for game in steam.owned_games(api_key, steamid)}
+        known = {game.appid: game for game in db.scalars(select(Game))}
+        added = updated = 0
+        for item in owned.values():
+            game = known.get(item.appid)
+            if game is None:
+                db.add(
+                    Game(
+                        appid=item.appid,
+                        name=item.name,
+                        owned=True,
+                        playtime_minutes=item.playtime_minutes,
+                        last_played_at=item.last_played_at,
+                        source="steam_library",
+                        created_at=now,
+                    )
                 )
+                _snapshot(
+                    db, item.appid, item.playtime_minutes, item.last_played_at, now
+                )
+                added += 1
+                continue
+            played_changed = (
+                game.playtime_minutes != item.playtime_minutes
+                or game.last_played_at != item.last_played_at
             )
-            _snapshot(db, item.appid, item.playtime_minutes, item.last_played_at, now)
-            added += 1
-            continue
-        played_changed = (
-            game.playtime_minutes != item.playtime_minutes
-            or game.last_played_at != item.last_played_at
-        )
-        if played_changed or game.name != item.name:
-            updated += 1
-        if played_changed:
-            _snapshot(db, item.appid, item.playtime_minutes, item.last_played_at, now)
-        game.name = item.name
-        game.owned = True
-        game.source = "steam_library"
-        game.playtime_minutes = item.playtime_minutes
-        game.last_played_at = item.last_played_at
-    db.commit()
-    return SyncResult(added=added, updated=updated, total=len(owned))
+            if played_changed or game.name != item.name:
+                updated += 1
+            if played_changed:
+                _snapshot(
+                    db, item.appid, item.playtime_minutes, item.last_played_at, now
+                )
+            game.name = item.name
+            game.owned = True
+            game.source = "steam_library"
+            game.playtime_minutes = item.playtime_minutes
+            game.last_played_at = item.last_played_at
+        db.commit()
+        return SyncResult(added=added, updated=updated, total=len(owned))
 
 
 def connect_steam(
