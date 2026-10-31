@@ -1,6 +1,7 @@
 """The review dialog: opening it, saving drafts, publishing, switching lanes and the helper routes."""
 
 import html
+import json
 import re
 from datetime import timedelta
 
@@ -224,6 +225,87 @@ def test_dialog_starts_clean(onboarded_client, games):
     raw = dialog(onboarded_client)
     assert input_value(raw, "dirty") == "0"
     assert "this.elements.dirty.value" in raw  # an input listener marks it dirty
+
+
+def button_tag(raw: str, label: str) -> str:
+    """The opening tag of the button whose text contains `label`, unescaped."""
+    found = re.search(
+        rf"<button[^>]*>(?=(?:(?!</button>).)*{re.escape(label)})", raw, re.S
+    )
+    assert found, f"no button {label}"
+    return html.unescape(found[0])
+
+
+def test_close_prompt_is_ready_and_hidden(onboarded_client, games):
+    raw = dialog(onboarded_client)
+    prompt = re.search(r'<div[^>]*id="close-prompt"[^>]*>', raw)
+    assert prompt and re.search(r"\bhidden\b", prompt[0])  # nothing to ask yet
+    assert "You have unsaved changes." in raw
+    for label in ("Save draft and close", "Discard changes", "Keep writing"):
+        assert label in raw
+    assert "em-alert--warning" in raw
+    assert raw.count("em-btn--primary") == 1  # the prompt adds no second primary
+
+
+def test_close_prompt_buttons(onboarded_client, games):
+    raw = dialog(onboarded_client)
+    save = button_tag(raw, "Save draft and close")
+    assert 'hx-post="/games/10/review/solo"' in save
+    assert re.search(r'"action":\s*"draft"', save) and 'hx-disabled-elt="this"' in save
+    assert ".close()" in button_tag(raw, "Discard changes")  # closes without saving
+    assert "data-keep" in button_tag(raw, "Keep writing")
+
+
+def test_close_prompt_follows_the_lane(onboarded_client, games):
+    save = button_tag(dialog(onboarded_client, lane="three_four"), "Save draft and close")
+    assert 'hx-post="/games/10/review/three_four"' in save
+
+
+def test_x_and_cancel_ask_before_closing_a_dirty_dialog(onboarded_client, games):
+    raw = dialog(onboarded_client)
+    for tag in (button_tag(raw, "Cancel"), re.search(r"<button[^>]*Close[^>]*>", raw)[0]):
+        assert "data-close" in tag
+        assert "hx-on:click" not in tag  # they no longer close at once
+    # One script decides: a dialog with changes asks, one without closes at once.
+    assert 'form.elements.dirty.value === "1"' in raw
+    assert "dialog.close()" in raw
+    assert 'addEventListener("cancel"' in raw  # Escape and the back gesture
+    assert "event.preventDefault()" in raw
+
+
+def test_the_prompt_survives_an_error_and_a_lane_switch(onboarded_client, games):
+    errored = post(onboarded_client, action="publish", text=" ").text
+    assert 'id="close-prompt"' in errored
+    switched = switch(onboarded_client, "two", dirty="0").text
+    assert 'id="close-prompt"' in switched
+    assert 'hx-post="/games/10/review/two"' in button_tag(
+        switched, "Save draft and close"
+    )
+
+
+def test_save_draft_and_close_saves_and_closes(onboarded_client, db, games):
+    raw = dialog(onboarded_client)
+    save = button_tag(raw, "Save draft and close")
+    url = re.search(r'hx-post="([^"]+)"', save)[1]
+    vals = json.loads(re.search(r"hx-vals='([^']+)'", save)[1])
+    r = onboarded_client.post(
+        url, data={**vals, "dirty": "1", "text": "Half  written ", "rating": "4"}
+    )
+    assert r.status_code == 200 and r.text == ""  # empty: #dialog is cleared
+    assert r.headers["HX-Trigger"] == "card-updated-10"
+    form, source = load_form(db, 10, Lane.SOLO)
+    assert source == "draft" and (form.text, form.rating) == ("Half  written ", 4)
+    assert history(db, 10, Lane.SOLO) == []  # saved as a draft, not published
+
+
+def test_save_draft_and_close_that_cannot_save_keeps_the_dialog(
+    onboarded_client, db, games
+):
+    r = post(onboarded_client, action="draft", dirty="1", text="keep me", status="nope")
+    assert "<dialog" in r.text and "HX-Trigger" not in r.headers
+    assert "Pick one of the listed options." in alert(r.text)
+    assert textarea(r.text, "text") == "keep me"
+    assert load_form(db, 10, Lane.SOLO)[1] == "new"
 
 
 def test_dialog_opens_on_solo_for_a_new_game(onboarded_client, games):
@@ -752,7 +834,7 @@ def test_clean_switch_opens_the_other_lane(onboarded_client, db, games):
     assert r.status_code == 200 and "<dialog" in r.text
     assert checked_lane(r.text) == "Two players"
     assert textarea(r.text, "text") == "Two words"
-    assert "unsaved changes" not in r.text
+    assert "unsaved changes in" not in r.text  # the lane switch's question
     assert "HX-Trigger" not in r.headers
     assert "is-still" in r.text  # the dialog is already open, so it doesn't rise again
 
@@ -805,7 +887,7 @@ def test_save_and_switch(onboarded_client, db, games):
     form, source = load_form(db, 10, Lane.SOLO)
     assert source == "draft" and (form.text, form.rating) == ("Unsaved words", 6)
     assert load_form(db, 10, Lane.TWO)[1] == "new"
-    assert "unsaved changes" not in r.text
+    assert "unsaved changes in" not in r.text  # the lane switch's question
 
 
 def test_discard_and_switch(onboarded_client, db, games):
@@ -844,7 +926,7 @@ def test_switch_with_an_unreadable_rating_shows_the_error(onboarded_client, game
 def test_switch_to_the_same_lane_keeps_what_was_typed(onboarded_client, games):
     r = switch(onboarded_client, "solo", dirty="1", text="still here")
     assert checked_lane(r.text) == "Solo" and textarea(r.text, "text") == "still here"
-    assert "unsaved changes" not in r.text
+    assert "unsaved changes in" not in r.text  # the lane switch's question
 
 
 def test_switch_rejects_unknown_values(onboarded_client, games):

@@ -1,8 +1,9 @@
 {% from "partials/field.html" import field, select_field %}
 {% from "partials/tag_chips.html" import tag_chips %}
-{#- The review dialog for one game and lane. Swapped into #dialog and opened as a modal by the script on <dialog>. Escape and the close
-    buttons call close(), and the `close` event empties #dialog, which is what closes it for good. Clicking the scrim does nothing, since the
-    form may hold unsaved words.
+{#- The review dialog for one game and lane. Swapped into #dialog and opened as a modal by the script on <dialog>. The `close` event
+    empties #dialog, which is what closes it for good. Escape, the X and Cancel close it at once when nothing has changed (`dirty` is "0"), and
+    otherwise ask first in #close-prompt, which is always on the page and hidden until then: save a draft and close, discard, or keep writing.
+    Clicking the scrim does nothing, since the form may hold unsaved words.
 
     Context: `game`, `lane` (a Lane), `tabs` (the lane switcher's buttons: a lane, its label, a mark of "Draft" or "Reviewed" or none, and
     whether it is the current one), `note` (a line about what the lane holds, or none), `form` (the ReviewForm to show), `tags` (its
@@ -41,7 +42,7 @@
       <div class="em-dialog__titles">
         <h2 id="review-title" class="em-dialog__title text-title">{{ game.name }}</h2>
       </div>
-      <button type="button" aria-label="Close" class="em-btn em-btn--ghost em-btn--sm em-btn--icon em-dialog__close" hx-on:click="this.closest('dialog').close()">
+      <button type="button" aria-label="Close" data-close class="em-btn em-btn--ghost em-btn--sm em-btn--icon em-dialog__close">
         <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
       </button>
     </header>
@@ -92,6 +93,29 @@
           </div>
         </div>
         {%- endif %}
+
+        {#- Asked when Escape, the X or Cancel would throw away changes. The script shows it. "Save draft and close" posts the form as Save draft does, so
+            it closes the dialog the same way, and "Discard changes" just closes. -#}
+        <div id="close-prompt" class="review-prompt" hidden>
+          <div class="em-alert em-alert--warning" role="alert">
+            <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.3 4.6a2 2 0 0 1 3.4 0l7 12a2 2 0 0 1-1.7 3H5a2 2 0 0 1-1.7-3z"/><path d="M12 9.5v4"/><circle cx="12" cy="16.6" r="0.55"/></svg>
+            <div class="em-alert__content">
+              <p class="em-alert__title text-label">You have unsaved changes.</p>
+              <div class="em-alert__action">
+                <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"
+                  hx-post="/games/{{ game.appid }}/review/{{ lane.value }}" hx-vals='{"action": "draft"}' hx-disabled-elt="this" hx-sync="closest form:drop">
+                  <span class="em-btn__label">Save draft and close</span>
+                </button>
+                <button type="button" class="em-btn em-btn--ghost em-btn--md text-label" hx-on:click="this.closest('dialog').close()">
+                  <span class="em-btn__label">Discard changes</span>
+                </button>
+                <button type="button" data-keep class="em-btn em-btn--ghost em-btn--md text-label">
+                  <span class="em-btn__label">Keep writing</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {%- if error %}
         <div class="em-alert em-alert--danger" role="alert">
@@ -167,7 +191,7 @@
       </div>
 
       <footer class="em-dialog__footer">
-        <button type="button" class="em-btn em-btn--secondary em-btn--md text-label" hx-on:click="this.closest('dialog').close()">
+        <button type="button" data-close class="em-btn em-btn--secondary em-btn--md text-label">
           <span class="em-btn__label">Cancel</span>
         </button>
         <button type="submit" name="action" value="draft" class="em-btn em-btn--secondary em-btn--md text-label"
@@ -190,6 +214,44 @@
     var form = document.getElementById("review-form");
     var group = document.getElementById("review-rating");
     var field = form.elements.rating;
+    var dialog = form.closest("dialog");
+    var prompt = document.getElementById("close-prompt");
+    function ask() {
+      // One question at a time: the lane switch's question is dropped, and nothing is lost by it.
+      var switching = form.querySelector(".review-prompt:not(#close-prompt)");
+      if (switching) switching.remove();
+      prompt.hidden = false;
+      prompt.querySelector("button").focus();
+    }
+    function keepWriting() {
+      prompt.hidden = true;
+      document.getElementById("review-text").focus();
+    }
+    function requestClose() {
+      if (form.elements.dirty.value === "1") ask();
+      else dialog.close();
+    }
+    Array.prototype.forEach.call(dialog.querySelectorAll("[data-close]"), function (button) {
+      button.addEventListener("click", requestClose);
+    });
+    prompt.querySelector("[data-keep]").addEventListener("click", keepWriting);
+    // Escape is stopped on the key itself because a browser may not let a second one be cancelled, and the
+    // cancel event is the back gesture on a phone. Escape on the question means keep writing.
+    dialog.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      if (!prompt.hidden) {
+        event.preventDefault();
+        keepWriting();
+      } else if (form.elements.dirty.value === "1") {
+        event.preventDefault();
+        ask();
+      }
+    });
+    dialog.addEventListener("cancel", function (event) {
+      if (form.elements.dirty.value !== "1") return;
+      event.preventDefault();
+      ask();
+    });
     var items = Array.prototype.slice.call(group.querySelectorAll("[role=radio]"));
     function pick(item) {
       items.forEach(function (other) {
