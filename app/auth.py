@@ -1,8 +1,10 @@
 """Who may see what: the onboarding steps, the sign-in session and the guard middleware."""
 
 from datetime import timedelta
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -20,6 +22,14 @@ SESSION_MAX_AGE = int(timedelta(days=30).total_seconds())
 # Named for the app so it doesn't collide with another app's "session" cookie on the same
 # host (a different port shares cookies).
 SESSION_COOKIE = "game_taste_session"
+
+# Methods that change things. A browser sends the page they came from with these, and a
+# request from a page on another site is refused (see `is_cross_site`).
+UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+CROSS_SITE_MESSAGE = (
+    "This request came from another site, so it was refused. "
+    "Open Game Taste at its own address and try again."
+)
 
 
 def _rank(step: str) -> int:
@@ -57,6 +67,29 @@ def advance_step(db: Session, to: str) -> None:
     saved = get_setting(db, "onboarding_step")
     if saved not in ONBOARDING_STEPS or _rank(to) > _rank(saved):
         set_setting(db, "onboarding_step", to)
+
+
+def is_cross_site(request: Request) -> bool:
+    """Whether a request that changes things says it came from a page on another host.
+
+    The page is named by the `Origin` header, or failing that `Referer`; its host and
+    port must be the ones the request was sent to (the `Host` header). A request with
+    neither header, such as one from a script, is allowed, since only a browser acting for
+    another site is the worry. The login cookie is `SameSite=Lax`, which already keeps it
+    off most cross-site posts; this closes the rest, and the login form too.
+    """
+    if request.method not in UNSAFE_METHODS:
+        return False
+    for name in ("origin", "referer"):
+        page = request.headers.get(name)
+        if page is None:
+            continue
+        try:
+            sent_from = urlsplit(page).netloc.lower()
+        except ValueError:  # not a URL at all
+            return True
+        return sent_from != request.headers.get("host", "").lower()
+    return False
 
 
 def sign_in(request: Request, db: Session) -> None:
@@ -129,7 +162,10 @@ def redirect_target(path: str, *, logged_in: bool, step: str) -> str | None:
 
 
 async def guard(request: Request, call_next):
-    """Send each request to the page its visitor may see, following `redirect_target`."""
+    """Refuse a cross-site request that changes things; send every other request to the
+    page its visitor may see, following `redirect_target`."""
+    if is_cross_site(request):
+        return PlainTextResponse(CROSS_SITE_MESSAGE, status_code=403)
     path = request.url.path
     if _is_open(path):
         return await call_next(request)

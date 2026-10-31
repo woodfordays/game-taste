@@ -50,7 +50,9 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
     vault = Vault(load_or_create_key(paths.key_path))
     session_secret = load_or_create_session_secret(paths.session_secret_path)
 
-    app = FastAPI()
+    # No generated API pages: nothing here is a public API, and they would sit open to anyone
+    # who can reach the port.
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.paths = paths
     app.state.services = default_services() if services is None else services
     app.state.vault = vault

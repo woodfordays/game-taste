@@ -7,6 +7,7 @@ from itsdangerous import TimestampSigner
 
 from app.auth import ONBOARDING_STEPS, advance_step, current_step
 from app.main import create_app
+from app.services.reviews import Lane, load_form
 from app.services.secrets import hash_password, verify_password
 from app.services.settings import (
     bump_session_epoch,
@@ -736,3 +737,105 @@ def test_a_refused_new_password_after_a_reset_keeps_the_reset_page(tmp_path, ser
     assert r.status_code == 422
     assert "Use at least 8 characters." in r.text and "Set a new password" in r.text
     assert "Welcome to Game Taste" not in r.text
+
+
+# --- the origin check --------------------------------------------------------
+
+DRAFT_URL = "/games/10/review/solo"
+DRAFT = {"action": "draft", "text": "Sent from a test"}
+
+
+def test_a_post_from_another_origin_is_refused(onboarded_client, db, games):
+    r = onboarded_client.post(
+        DRAFT_URL, data=DRAFT, headers={"Origin": "http://localhost:3000"}
+    )
+    assert r.status_code == 403
+    assert "another site" in r.text and "<html" not in r.text  # short and plain
+    assert r.headers["content-type"].startswith("text/plain")
+    assert load_form(db, 10, Lane.SOLO)[1] == "new"  # nothing was saved
+
+
+def test_a_post_from_the_same_host_is_accepted(onboarded_client, db, games):
+    r = onboarded_client.post(
+        DRAFT_URL, data=DRAFT, headers={"Origin": "http://testserver"}
+    )
+    assert r.status_code == 200
+    assert load_form(db, 10, Lane.SOLO)[0].text == "Sent from a test"
+
+
+def test_a_post_with_no_origin_or_referer_is_accepted(onboarded_client, games):
+    assert onboarded_client.post(DRAFT_URL, data=DRAFT).status_code == 200
+
+
+def test_the_referer_is_checked_when_there_is_no_origin(onboarded_client, games):
+    foreign = {"Referer": "http://evil.example/page"}
+    assert (
+        onboarded_client.post(DRAFT_URL, data=DRAFT, headers=foreign).status_code == 403
+    )
+    same = {"Referer": "http://testserver/library?x=1"}
+    assert onboarded_client.post(DRAFT_URL, data=DRAFT, headers=same).status_code == 200
+
+
+def test_the_origin_wins_over_the_referer(onboarded_client, games):
+    right = {"Origin": "http://testserver", "Referer": "http://evil.example/"}
+    assert (
+        onboarded_client.post(DRAFT_URL, data=DRAFT, headers=right).status_code == 200
+    )
+    wrong = {"Origin": "http://evil.example", "Referer": "http://testserver/"}
+    assert (
+        onboarded_client.post(DRAFT_URL, data=DRAFT, headers=wrong).status_code == 403
+    )
+
+
+def test_the_port_must_match_too(onboarded_client, games):
+    other_port = {"Origin": "http://testserver:8420"}
+    r = onboarded_client.post(DRAFT_URL, data=DRAFT, headers=other_port)
+    assert r.status_code == 403
+    # What counts is the Host the request was sent to.
+    same = {"Origin": "http://localhost:8420", "Host": "localhost:8420"}
+    assert onboarded_client.post(DRAFT_URL, data=DRAFT, headers=same).status_code == 200
+
+
+def test_an_origin_that_is_not_a_url_is_refused(onboarded_client, games):
+    for origin in ("null", "http://[::1", "not a url", ""):
+        r = onboarded_client.post(DRAFT_URL, data=DRAFT, headers={"Origin": origin})
+        assert r.status_code == 403, origin
+
+
+def test_every_unsafe_method_is_checked_and_reading_is_not(onboarded_client, client):
+    evil = {"Origin": "http://evil.example"}
+    for method in ("post", "put", "patch", "delete"):
+        r = getattr(onboarded_client, method)("/settings/region", headers=evil)
+        assert r.status_code == 403, method
+    for method in ("get", "head", "options"):
+        r = getattr(onboarded_client, method)("/healthz", headers=evil)
+        assert r.status_code != 403, method
+    assert client.get("/healthz", headers=evil).text == "ok"
+
+
+def test_login_and_logout_posts_from_another_origin_are_refused(logged_in_client, app):
+    evil = {"Origin": "http://evil.example"}
+    fresh = TestClient(app)
+    r = fresh.post("/login", data={"password": "sample-password"}, headers=evil)
+    assert r.status_code == 403 and "game_taste_session" not in fresh.cookies
+    assert logged_in_client.post("/logout", headers=evil).status_code == 403
+    # Still logged in, since the logout never ran.
+    r = logged_in_client.get("/onboarding/ai", follow_redirects=False)
+    assert r.status_code == 200
+
+
+def test_the_origin_check_comes_before_the_first_run_page(client):
+    r = client.post(
+        "/onboarding/password",
+        data={"password": "sample-password", "confirm": "sample-password"},
+        headers={"Origin": "http://evil.example"},
+    )
+    assert r.status_code == 403
+
+
+# --- no generated API pages --------------------------------------------------
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_api_docs_are_off(onboarded_client, path):
+    assert onboarded_client.get(path, follow_redirects=False).status_code == 404
