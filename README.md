@@ -55,7 +55,7 @@ On Linux the data folder may belong to root. If `touch` says permission denied, 
 
 ## Backups
 
-Copy the whole `data` folder. It holds the database (`game-taste.db`) and the key file (`secret.key`), and the key file is needed to read the stored keys. Without the key file, the keys stored in a copied database can't be read. Run `docker compose stop` first so the copy is taken while nothing is writing.
+Copy the whole `data` folder. It holds the database (`game-taste.db`) and the key file (`secret.key`), and the key file is needed to read the stored keys. Without the key file, the keys stored in a copied database can't be read. Run `docker compose stop` first so the copy is taken while nothing is writing, then copy the folder, then run `docker compose start`. On Linux the files in `data` may belong to root, so copying them may need `sudo`.
 
 To restore, put the folder back as `data` next to `docker-compose.yml` and run `docker compose up -d`.
 

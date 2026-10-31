@@ -1,6 +1,12 @@
-data/
+data*/
+*.db
+secret.key
+session.secret
 __pycache__/
 .venv/
 *.egg-info/
 .pytest_cache/
 .git
+.superpowers/
+tests/
+docs/
