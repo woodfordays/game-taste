@@ -581,8 +581,6 @@
   width: 120px;
   height: 56px;
   border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
-  object-fit: cover;
 }
 
 .library-row__main {
@@ -619,6 +617,67 @@
   margin: 0 0 var(--space-6);
 }
 
+/* Your numbers: a row of stat tiles that wraps on narrow screens. A game's name in a tile is
+   cut short with an ellipsis rather than stretching it. */
+.home-stats {
+  margin: 0 0 var(--space-8);
+}
+
+.home-stats__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-stat .em-stat__value {
+  min-width: 0;
+}
+
+.home-stat__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A game's artwork (partials/art.html). The frame takes its size from the class it is given,
+   and the image fills it. When the image can't be loaded the frame shows a game controller on
+   a soft tint instead, in the theme's colors. */
+.game-art {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}
+
+.game-art > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.game-art__placeholder {
+  display: none;
+}
+
+.game-art.is-missing {
+  display: grid;
+  place-items: center;
+  color: var(--ink-subtle);
+  background: linear-gradient(135deg, var(--ember-soft), var(--surface-sunken) 70%);
+}
+
+.game-art.is-missing .game-art__placeholder {
+  display: block;
+  width: 40%;
+  max-width: 48px;
+  height: auto;
+}
+
 .home-section-title {
   margin: 0 0 var(--space-4);
 }
@@ -645,11 +704,8 @@
 }
 
 .game-card__art {
-  display: block;
   width: 100%;
   aspect-ratio: 460 / 215;
-  object-fit: cover;
-  background: var(--surface-sunken);
 }
 
 .game-card__body {

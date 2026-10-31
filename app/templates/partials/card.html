@@ -1,4 +1,5 @@
 {% from "partials/tag_chips.html" import tag_chips %}
+{% from "partials/art.html" import game_art %}
 {#- One "Currently playing" card on Home. Context: `game` and `summary` (the game's CardSummary: the latest published rating, lane and
     tags, and whether any lane has a draft). The card refreshes itself when its review changes: saving or publishing in the dialog
     answers with the `card-updated-{appid}` event, and the card then fetches itself again. The name is the one button, stretched over the
@@ -6,7 +7,7 @@
     otherwise be inherited. -#}
 <li id="card-{{ game.appid }}" class="game-card em-card"
   hx-get="/games/{{ game.appid }}/card" hx-trigger="card-updated-{{ game.appid }} from:body" hx-swap="outerHTML">
-  <img class="game-card__art" src="{{ artwork_url(game.appid) }}" alt="" width="460" height="215" loading="lazy" referrerpolicy="no-referrer">
+  {{ game_art(game, "game-card__art", 460, 215) }}
   <div class="game-card__body">
     <h3 class="game-card__name text-subtitle">
       <button type="button" class="game-card__open" aria-label="Open review for {{ game.name }}"

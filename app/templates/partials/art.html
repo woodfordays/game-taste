@@ -1,0 +1,8 @@
+{#- A game's artwork, with a placeholder for when Steam has none to give. `class` sizes the frame (game-card__art or library-row__art), and
+    the image fills it. When the image can't be loaded the frame gets `is-missing` and the image is taken out, so the frame shows the
+    placeholder instead: a game controller on a soft tint, drawn by app.css in the theme's own colors. The handler is on the image itself,
+    so it also covers images that load late (loading="lazy") and ones htmx swaps in. The art is decorative: the game's name is always next
+    to it. -#}
+{% macro game_art(game, class, width, height) -%}
+<span class="game-art {{ class }}"><img src="{{ artwork_url(game.appid) }}" alt="" width="{{ width }}" height="{{ height }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.classList.add('is-missing'); this.remove()"><svg class="game-art__placeholder" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7.5h10a4.5 4.5 0 0 1 4.4 5.4l-.8 3.9a2.4 2.4 0 0 1-4.2 1.1L14.6 16H9.4l-1.8 1.9a2.4 2.4 0 0 1-4.2-1.1l-.8-3.9A4.5 4.5 0 0 1 7 7.5z"/><path d="M8 10.5v3M6.5 12h3"/><circle cx="15.5" cy="11" r=".75"/><circle cx="17.5" cy="13" r=".75"/></svg></span>
+{%- endmacro %}

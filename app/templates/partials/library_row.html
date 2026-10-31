@@ -1,8 +1,9 @@
+{% from "partials/art.html" import game_art %}
 {#- One game in the Library list. Context: `game`. The switch posts the opposite of what it shows, and the answer is this row
     again, so the next toggle is computed from the state the server saved. `hx-sync` drops a second click while the first is
     in flight rather than disabling the switch, which would drop keyboard focus. -#}
 <li id="game-{{ game.appid }}" class="library-row">
-  <img class="library-row__art" src="{{ artwork_url(game.appid) }}" alt="" width="120" height="56" loading="lazy" referrerpolicy="no-referrer">
+  {{ game_art(game, "library-row__art", 120, 56) }}
   <div class="library-row__main">
     <p id="game-name-{{ game.appid }}" class="library-row__name text-subtitle">{{ game.name }}</p>
     <p class="library-row__meta text-caption">
