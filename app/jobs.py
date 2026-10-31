@@ -9,7 +9,7 @@ Both threads exist only when `Services.background` is true. Tests leave them off
 
 import logging
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth import setup_finished
@@ -94,8 +94,10 @@ def notify_worker(app: FastAPI) -> None:
 # --- the queue ---------------------------------------------------------------
 
 
-def enqueue_job(db: Session, kind: str, requested_by: str, now: datetime) -> Job:
-    """Queue a `kind` job, or return the one of that kind already queued or running."""
+def _enqueue(
+    db: Session, kind: str, requested_by: str, now: datetime
+) -> tuple[Job, bool]:
+    """The pending job of `kind` and False, or a new one and True."""
     with _enqueue_lock:
         existing = db.scalars(
             select(Job)
@@ -104,11 +106,16 @@ def enqueue_job(db: Session, kind: str, requested_by: str, now: datetime) -> Job
             .limit(1)
         ).first()
         if existing is not None:
-            return existing
+            return existing, False
         job = Job(kind=kind, status=QUEUED, requested_by=requested_by, created_at=now)
         db.add(job)
         db.commit()
-        return job
+        return job, True
+
+
+def enqueue_job(db: Session, kind: str, requested_by: str, now: datetime) -> Job:
+    """Queue a `kind` job, or return the one of that kind already queued or running."""
+    return _enqueue(db, kind, requested_by, now)[0]
 
 
 def claim_job(db: Session, job_id: int, now: datetime) -> bool:
@@ -122,28 +129,62 @@ def claim_job(db: Session, job_id: int, now: datetime) -> bool:
     return result.rowcount == 1
 
 
-def _finish_job(
-    ctx: JobContext, job_id: int, status: str, error: str | None = None
-) -> None:
+@dataclass(frozen=True)
+class JobOutcome:
+    """How a job ended, kept until it is written to the job row."""
+
+    status: str
+    error: str | None
+    finished_at: datetime
+
+
+def _write_outcome(ctx: JobContext, job_id: int, outcome: JobOutcome) -> None:
     with ctx.session_factory() as db:
         db.execute(
             update(Job)
             .where(Job.id == job_id)
-            .values(status=status, finished_at=ctx.services.clock(), error=error)
+            .values(
+                status=outcome.status,
+                finished_at=outcome.finished_at,
+                error=outcome.error,
+            )
         )
         db.commit()
 
 
-def run_pending_jobs(app: FastAPI) -> int:
+def _record_waiting_outcomes(app: FastAPI, ctx: JobContext) -> bool:
+    """Write down the outcomes still waiting to be saved. True when none are left.
+
+    A write can fail (the database stays locked, the disk is full). Its outcome stays in
+    `app.state.unrecorded_outcomes`, so that the job doesn't stay "running" for good and
+    block the next one of its kind: the next pass tries again before it claims anything.
+    """
+    waiting: dict[int, JobOutcome] = app.state.unrecorded_outcomes
+    for job_id, outcome in list(waiting.items()):
+        try:
+            _write_outcome(ctx, job_id, outcome)
+        except Exception:
+            log.exception("Could not save how job %s ended. Will try again.", job_id)
+            return False
+        del waiting[job_id]
+    return True
+
+
+def run_pending_jobs(
+    app: FastAPI, should_stop: Callable[[], bool] = lambda: False
+) -> int:
     """Run the queued jobs one at a time, oldest first. Returns how many ran.
 
     A handler that raises fails its job and nothing else: the error saved on the job names
     only the exception's type, since the message might hold a secret. The traceback goes to
-    the log.
+    the log. No new job starts once `should_stop()` is true, nor while the outcome of an
+    earlier one is still unsaved (see `_record_waiting_outcomes`).
     """
     ctx = job_context(app)
     ran = 0
     while True:
+        if not _record_waiting_outcomes(app, ctx) or should_stop():
+            return ran
         with ctx.session_factory() as db:
             job = db.execute(
                 select(Job.id, Job.kind)
@@ -159,17 +200,20 @@ def run_pending_jobs(app: FastAPI) -> int:
                 continue
         ran += 1
         handler = app.state.job_handlers.get(kind)
+        status, error = DONE, None
         if handler is None:
-            _finish_job(ctx, job_id, FAILED, f"Nothing can run a {kind} job yet.")
-            continue
-        try:
-            handler(ctx, job_id)
-        except Exception as exc:
-            log.exception("The %s job %s stopped unexpectedly.", kind, job_id)
-            error = f"The {kind} stopped unexpectedly: {type(exc).__name__}. Try again."
-            _finish_job(ctx, job_id, FAILED, error)
+            status, error = FAILED, f"Nothing can run a {kind} job yet."
         else:
-            _finish_job(ctx, job_id, DONE)
+            try:
+                handler(ctx, job_id)
+            except Exception as exc:
+                log.exception("The %s job %s stopped unexpectedly.", kind, job_id)
+                status = FAILED
+                error = (
+                    f"The {kind} stopped unexpectedly: {type(exc).__name__}. Try again."
+                )
+        outcome = JobOutcome(status, error, ctx.services.clock())
+        app.state.unrecorded_outcomes[job_id] = outcome
 
 
 def recover_interrupted_jobs(db: Session, now: datetime) -> int:
@@ -216,30 +260,45 @@ def last_scheduled_time(now: datetime, refresh_time: str, tz: str) -> datetime:
 def scheduled_refresh_due(db: Session, now: datetime) -> bool:
     """Whether the daily refresh should be queued now.
 
-    True once setup is finished and no refresh job, of any status and whoever asked for it,
-    was created since the latest scheduled time. A manual refresh after that time therefore
-    counts as the day's refresh, and so does one that failed.
+    True once setup is finished and no refresh job already stands for the day. A refresh job,
+    of any status and whoever asked for it, stands for the day when it was created at or
+    after the latest scheduled time, or finished at or after it, or is still queued or
+    running. So a manual refresh at 19:59:50 for a 20:00 schedule is the day's refresh
+    whether it ends before or after 20:00, and a failed one counts too.
     """
     if not setup_finished(db):
         return False
     refresh_time = get_setting(db, REFRESH_TIME_SETTING) or DEFAULT_REFRESH_TIME
     tz = get_setting(db, TIMEZONE_SETTING) or DEFAULT_TIMEZONE
     since = last_scheduled_time(now, refresh_time, tz)
-    recent = db.scalars(
-        select(Job.id).where(Job.kind == REFRESH_KIND, Job.created_at >= since).limit(1)
+    standing = db.scalars(
+        select(Job.id)
+        .where(
+            Job.kind == REFRESH_KIND,
+            or_(
+                Job.created_at >= since,
+                Job.finished_at >= since,
+                Job.status.in_(PENDING),
+            ),
+        )
+        .limit(1)
     ).first()
-    return recent is None
+    return standing is None
 
 
 def enqueue_scheduled_refresh(app: FastAPI) -> bool:
-    """Queue the daily refresh if it is due and wake the worker. Returns whether it queued."""
+    """Queue the daily refresh if it is due, and wake the worker.
+
+    Returns whether it created a job.
+    """
     now = app.state.services.clock()
     with app.state.session_factory() as db:
         if not scheduled_refresh_due(db, now):
             return False
-        enqueue_job(db, REFRESH_KIND, REQUESTED_BY_SCHEDULE, now)
-    notify_worker(app)
-    return True
+        _, created = _enqueue(db, REFRESH_KIND, REQUESTED_BY_SCHEDULE, now)
+    if created:
+        notify_worker(app)
+    return created
 
 
 # --- the threads -----------------------------------------------------------------
@@ -255,7 +314,7 @@ def _worker_loop(app: FastAPI, stop: threading.Event) -> None:
         if stop.is_set():
             return
         try:
-            run_pending_jobs(app)
+            run_pending_jobs(app, should_stop=stop.is_set)
         except Exception:
             log.exception("The job worker hit an error and will look again shortly.")
         wakeup.wait(WORKER_POLL_SECONDS)

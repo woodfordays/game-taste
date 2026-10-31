@@ -73,6 +73,8 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
     # Handlers by job kind, each called with a JobContext and the job's id.
     app.state.job_handlers = {}
     app.state.job_wakeup = threading.Event()
+    # How finished jobs ended when saving it failed, by job id (see app/jobs.py).
+    app.state.unrecorded_outcomes = {}
 
     with app.state.session_factory() as db:
         # A job still "running" now was cut off by the last shutdown. Fail it, so that it
