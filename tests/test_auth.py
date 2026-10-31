@@ -524,11 +524,14 @@ def test_reset_keeps_onboarding_progress(tmp_path, services):
         },
         follow_redirects=False,
     )
-    assert r.headers["location"] == "/onboarding/ai"
-    # Finished before the reset, so the guard sends the user straight home.
+    # Finished before the reset, so the user goes straight home, not back to setup.
+    assert r.headers["location"] == "/"
+    assert client.get("/", follow_redirects=False).status_code == 200
     assert (
         client.get("/onboarding/ai", follow_redirects=False).headers["location"] == "/"
     )
+    with app2.state.session_factory() as s:
+        assert get_setting(s, "onboarding_step") == "done"
 
 
 def test_no_reset_flag_leaves_the_password(tmp_path, services):
@@ -652,3 +655,84 @@ def test_a_reset_ends_sessions_even_with_the_same_password(tmp_path, services):
     second = create_app(tmp_path, services=services)
     with second.state.session_factory() as s:
         assert int(get_session_epoch(s)) > int(before)
+
+
+# --- the password page after a reset -----------------------------------------
+
+
+RESET_FORM = {
+    "password": "new-password",
+    "confirm": "new-password",
+    "timezone": "Europe/London",
+}
+
+
+def reset_app(tmp_path, services, step="done"):
+    """An app whose password was reset after setup got as far as `step`."""
+    first = create_app(tmp_path, services=services)
+    with first.state.session_factory() as s:
+        set_password(s)
+        set_setting(s, "timezone", "America/Chicago")
+        advance_step(s, step)
+    (tmp_path / "reset-password").touch()
+    return create_app(tmp_path, services=services)
+
+
+def test_reset_of_a_finished_setup_asks_for_a_new_password(tmp_path, services):
+    page = TestClient(reset_app(tmp_path, services)).get("/onboarding/password")
+    assert page.status_code == 200
+    assert "Set a new password" in page.text
+    assert "Step 1 of 5" not in page.text and "Welcome to Game Taste" not in page.text
+    assert "Create login" not in page.text and "Set password" in page.text
+    assert page.text.count("em-btn--primary") == 1
+    assert page.text.count('type="password"') == 2
+    assert "<title>Set a new password - Game Taste</title>" in page.text
+
+
+def test_first_run_still_welcomes_the_user(client):
+    page = client.get("/onboarding/password").text
+    assert "Step 1 of 5" in page and "Welcome to Game Taste" in page
+    assert "Set a new password" not in page and "Create login" in page
+
+
+def test_reset_mid_setup_keeps_the_first_run_page_and_resumes(tmp_path, services):
+    client = TestClient(reset_app(tmp_path, services, step="steam"))
+    page = client.get("/onboarding/password").text
+    assert "Step 1 of 5" in page and "Set a new password" not in page
+    r = client.post("/onboarding/password", data=RESET_FORM, follow_redirects=False)
+    assert r.headers["location"] == "/onboarding/ai"
+    # The guard picks up where setup stopped.
+    r = client.get("/", follow_redirects=False)
+    assert r.headers["location"] == "/onboarding/steam"
+
+
+def test_the_new_password_after_a_reset_goes_home(tmp_path, services):
+    app = reset_app(tmp_path, services)
+    client = TestClient(app)
+    r = client.post("/onboarding/password", data=RESET_FORM, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/"
+    with app.state.session_factory() as s:
+        assert verify_password(get_setting(s, "password_hash"), "new-password")
+        assert get_setting(s, "onboarding_step") == "done"
+    login = TestClient(app).post(
+        "/login", data={"password": "new-password"}, follow_redirects=False
+    )
+    assert login.headers["location"] == "/"
+
+
+def test_a_reset_keeps_the_time_zone_that_was_chosen(tmp_path, services):
+    app = reset_app(tmp_path, services)
+    TestClient(app).post("/onboarding/password", data=RESET_FORM)
+    with app.state.session_factory() as s:
+        assert get_setting(s, "timezone") == "America/Chicago"  # not the browser's
+
+
+def test_a_refused_new_password_after_a_reset_keeps_the_reset_page(tmp_path, services):
+    client = TestClient(reset_app(tmp_path, services))
+    r = client.post(
+        "/onboarding/password",
+        data={"password": "short", "confirm": "short", "timezone": "UTC"},
+    )
+    assert r.status_code == 422
+    assert "Use at least 8 characters." in r.text and "Set a new password" in r.text
+    assert "Welcome to Game Taste" not in r.text

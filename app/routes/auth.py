@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from markupsafe import Markup
 from sqlalchemy.orm import Session
 
-from app.auth import PASSWORD_PATH, advance_step, sign_in
+from app.auth import PASSWORD_PATH, advance_step, setup_finished, sign_in
 from app.db import get_db
 from app.services.secrets import hash_password, new_password_problem, verify_password
 from app.services.settings import get_setting, known_timezones, set_setting
@@ -23,8 +23,14 @@ def clean_timezone(name: str) -> str:
 
 
 @router.get("/onboarding/password")
-def password_page(request: Request):
-    return render(request, "onboarding/password.html", errors={}, submitted_timezone="")
+def password_page(request: Request, db: Session = Depends(get_db)):
+    return render(
+        request,
+        "onboarding/password.html",
+        errors={},
+        submitted_timezone="",
+        reset=setup_finished(db),
+    )
 
 
 @router.post("/onboarding/password")
@@ -50,15 +56,21 @@ def password_submit(
             status_code=422,
             errors={field: Markup(message)},
             submitted_timezone=timezone,
+            reset=setup_finished(db),
         )
 
     # The password goes in last: until it exists the guard keeps this page open, so a
     # failure part-way can be retried.
-    set_setting(db, "timezone", timezone)
+    # After a reset of a finished setup there is nothing left to set up: the step stays
+    # "done" (advance_step never goes back), the time zone already chosen stays, and the
+    # user goes home.
+    finished = setup_finished(db)
+    if not finished:
+        set_setting(db, "timezone", timezone)
     advance_step(db, "ai")
     set_setting(db, "password_hash", hash_password(password))
     sign_in(request, db)
-    return redirect(request, "/onboarding/ai")
+    return redirect(request, "/" if finished else "/onboarding/ai")
 
 
 @router.get("/login")

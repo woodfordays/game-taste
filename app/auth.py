@@ -37,6 +37,15 @@ def current_step(db: Session) -> str:
     return saved if saved in ONBOARDING_STEPS else ONBOARDING_STEPS[0]
 
 
+def setup_finished(db: Session) -> bool:
+    """Whether onboarding was finished, which stays true through a password reset.
+
+    A reset drops only the password, so a no-password visit to a finished setup is a user
+    who is back to choose a new one, not someone setting the app up.
+    """
+    return get_setting(db, "onboarding_step") == "done"
+
+
 def advance_step(db: Session, to: str) -> None:
     """Save `to` as the current step, unless the user is already at or past it.
 
