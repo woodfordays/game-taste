@@ -1,7 +1,7 @@
 """The game library: connecting to Steam, syncing from it, and the artwork for each game."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from cryptography.fernet import InvalidToken
@@ -117,7 +117,7 @@ class StoredSteam:
     tells those apart. `steam_id` is None when none is saved.
     """
 
-    api_key: str | None
+    api_key: str | None = field(repr=False)  # never printed
     steam_id: str | None
     key_unreadable: bool = False
 

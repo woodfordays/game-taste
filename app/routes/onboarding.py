@@ -283,8 +283,8 @@ TOUR_SCREENS = [
         "Write a review in your own words",
         (
             "After you play a game, write down what you thought of it. Say it however "
-            "you like: what worked, what didn't, who you played with. There is no form "
-            "to fill in.",
+            "you like: what worked, what didn't, who you played with. Nothing is "
+            "required beyond a few words.",
             "A game can have a separate review for each way you play it, such as solo "
             "or with a group. Your words are saved exactly as you wrote them, and a "
             "later review adds a new version instead of replacing the old one.",

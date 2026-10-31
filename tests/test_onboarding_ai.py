@@ -156,6 +156,13 @@ def test_provider_row_shows_a_saved_key_hint(logged_in_client, db, app):
     assert "Saved key ending in mple" in text and "ant-sample" not in text
 
 
+def test_the_local_url_placeholder_reaches_the_host_from_the_container(logged_in_client):
+    text = ai_page_row(logged_in_client, "local")
+    placeholder = re.search(r'name="url_local"[^>]*placeholder="([^"]*)"', text)
+    assert placeholder and placeholder[1] == "http://host.docker.internal:1234/v1"
+    assert "localhost" not in placeholder[1]
+
+
 def test_provider_row_is_a_fragment_and_marks_the_row(logged_in_client):
     text = logged_in_client.get("/onboarding/ai/provider-row?kind=openai").text
     assert "<html" not in text

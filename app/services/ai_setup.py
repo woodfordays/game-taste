@@ -331,9 +331,8 @@ def submit_ai_form(
 class KeyField:
     """One key input: what to put in it, and what to say beside it."""
 
-    value: str = (
-        ""  # a key typed this time, kept after a failed test; never a saved key
-    )
+    # A key typed this time, kept after a failed test; never a saved key. Never printed.
+    value: str = field(default="", repr=False)
     saved: str = ""  # placeholder shown when a key is saved: "Saved key ending in abcd"
     error: str = ""
 

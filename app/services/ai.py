@@ -2,7 +2,7 @@
 
 import hashlib
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any, Protocol
@@ -52,7 +52,8 @@ JOB_LABELS = {
 @dataclass(frozen=True)
 class ProviderConfig:
     kind: ProviderKind
-    api_key: str | None
+    # Left out of repr, so no log line or traceback prints the key.
+    api_key: str | None = field(repr=False)
     base_url: str | None
 
 

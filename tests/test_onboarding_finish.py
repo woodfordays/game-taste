@@ -83,6 +83,14 @@ def test_each_screen_shows_the_step_its_position_and_its_own_title(
         assert paragraph in text
 
 
+def test_the_first_screen_does_not_claim_there_is_no_form(client_at_tour_step):
+    text = tour(client_at_tour_step, 1)
+    assert "Nothing is required beyond a few words." in text
+    assert "no form" not in text
+    # The sentence before it still reads on from "who you played with".
+    assert "who you played with. Nothing is required" in text
+
+
 def test_the_screens_walk_through_the_loop_in_order(client_at_tour_step):
     # Review, profiles, queue, decline with a reason.
     keywords = ["review", "profile", "queue", "reason"]

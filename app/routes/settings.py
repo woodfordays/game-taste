@@ -101,7 +101,8 @@ PARTIALS = {
 class SteamView:
     steam_id: str | None  # the saved SteamID64, when connected
     key_hint: str  # "Saved key ending in abcd", or "" when no key is saved
-    key: str = ""  # typed this time; never the saved key
+    # Typed this time and never printed; never the saved key.
+    key: str = field(default="", repr=False)
     profile: str = ""  # typed this time
     region: str = DEFAULT_STORE_REGION
     key_error: str | None = None

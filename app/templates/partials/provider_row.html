@@ -13,7 +13,7 @@
     {% endif %}
   </div>
   {% if local %}
-  {{ field("url-local", "url_local", "Server URL", type="url", value=row.url, placeholder="http://localhost:1234/v1", hint="Most local servers end in /v1.", autocomplete="off", mono=true) }}
+  {{ field("url-local", "url_local", "Server URL", type="url", value=row.url, placeholder="http://host.docker.internal:1234/v1", hint="Most local servers end in /v1.", autocomplete="off", mono=true) }}
   {% endif %}
   {#- new-password keeps browsers from filling the login password into a key field. -#}
   {{ field("key-" ~ row.kind.value, "key_" ~ row.kind.value, "API key", type="password", value=row.key.value, placeholder=row.key.saved, error=row.key.error, hint=("Leave this empty if your server doesn't need a key." if local else none), autocomplete="new-password", required=false, optional=local, mono=true) }}
