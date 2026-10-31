@@ -172,8 +172,10 @@ def _lane_tabs(states: dict[Lane, LaneState], current: Lane) -> list[LaneTab]:
 class WhoPlayed:
     """What the "who played" checkboxes show."""
 
-    selected: set[int]  # the ids to tick: the people ticked and the named group's members
-    locked: set[int]  # the group's members: ticked and not editable, since the group counts them
+    # The ids to tick: the people ticked and the named group's members.
+    selected: set[int]
+    # The group's members: ticked and not editable, since the group counts them.
+    locked: set[int]
     group: NamedGroup | None  # the group chosen, for its name in the hint
     hint: str | None  # the head-count hint
 

@@ -258,13 +258,18 @@ def test_close_prompt_buttons(onboarded_client, games):
 
 
 def test_close_prompt_follows_the_lane(onboarded_client, games):
-    save = button_tag(dialog(onboarded_client, lane="three_four"), "Save draft and close")
+    save = button_tag(
+        dialog(onboarded_client, lane="three_four"), "Save draft and close"
+    )
     assert 'hx-post="/games/10/review/three_four"' in save
 
 
 def test_x_and_cancel_ask_before_closing_a_dirty_dialog(onboarded_client, games):
     raw = dialog(onboarded_client)
-    for tag in (button_tag(raw, "Cancel"), re.search(r"<button[^>]*Close[^>]*>", raw)[0]):
+    for tag in (
+        button_tag(raw, "Cancel"),
+        re.search(r"<button[^>]*Close[^>]*>", raw)[0],
+    ):
         assert "data-close" in tag
         assert "hx-on:click" not in tag  # they no longer close at once
     # One script decides: a dialog with changes asks, one without closes at once.
@@ -1062,7 +1067,9 @@ def test_a_chosen_groups_members_are_checked_and_locked(
 
 def test_people_outside_the_group_stay_tickable(onboarded_client, games, people, riley):
     sam, alex, crew = people
-    raw = onboarded_client.get(f"/people/options?named_group_id={crew.id}&lane=two").text
+    raw = onboarded_client.get(
+        f"/people/options?named_group_id={crew.id}&lane=two"
+    ).text
     assert person_boxes(raw)[riley.id] == (False, False)
 
 
@@ -1088,12 +1095,16 @@ def test_the_group_hint_escapes_the_name(onboarded_client, db, games, people):
     odd = add_group(db, 'R&D <i>"Crew"</i>', [sam.id], FIXED_NOW)
     raw = onboarded_client.get(f"/people/options?named_group_id={odd.id}&lane=two").text
     assert "<i>" not in raw
-    assert "Everyone in R&amp;D &lt;i&gt;&#34;Crew&#34;&lt;/i&gt; counts as played." in raw
+    assert (
+        "Everyone in R&amp;D &lt;i&gt;&#34;Crew&#34;&lt;/i&gt; counts as played." in raw
+    )
 
 
 def test_the_group_hint_describes_the_people_boxes(onboarded_client, games, people):
     sam, alex, crew = people
-    raw = onboarded_client.get(f"/people/options?named_group_id={crew.id}&lane=two").text
+    raw = onboarded_client.get(
+        f"/people/options?named_group_id={crew.id}&lane=two"
+    ).text
     assert re.search(r'<fieldset[^>]*aria-describedby="people-group-hint"', raw)
     assert 'id="people-group-hint"' in raw
     plain = onboarded_client.get("/people/options?lane=two").text
@@ -1109,7 +1120,8 @@ def test_the_head_count_hint_counts_the_whole_group(
         f"/people/options?named_group_id={crew.id}&people={riley.id}&lane=two"
     ).text
     assert (
-        "You and 3 others make 4 players. This looks like the Three to four lane." in raw
+        "You and 3 others make 4 players. This looks like the Three to four lane."
+        in raw
     )
     five = onboarded_client.get(
         f"/people/options?named_group_id={crew.id}&people={riley.id}&lane=three_four"
@@ -1125,7 +1137,9 @@ def test_the_dialog_locks_a_drafts_group_members(
         db,
         10,
         Lane.TWO,
-        ReviewForm(people=[riley.id], named_group_id=crew.id, group_text=" Crew words "),
+        ReviewForm(
+            people=[riley.id], named_group_id=crew.id, group_text=" Crew words "
+        ),
         FIXED_NOW,
     )
     raw = dialog(onboarded_client, lane="two")

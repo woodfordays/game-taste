@@ -1533,9 +1533,7 @@ def test_settings_stays_reachable_after_every_section_is_used(onboarded_client):
             assert f'id="{title}"' in r.text, (path, title)
 
 
-def test_changing_the_password_logs_out_every_other_session(
-    onboarded_client, db, app
-):
+def test_changing_the_password_logs_out_every_other_session(onboarded_client, db, app):
     other = TestClient(app)
     other.post("/login", data={"password": "sample-password"})
     assert other.get("/settings", follow_redirects=False).status_code == 200
@@ -1545,9 +1543,7 @@ def test_changing_the_password_logs_out_every_other_session(
     # The other browser is sent to log in, as a page and as an htmx request...
     r = other.get("/settings", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/login"
-    r = other.get(
-        "/settings", headers={"HX-Request": "true"}, follow_redirects=False
-    )
+    r = other.get("/settings", headers={"HX-Request": "true"}, follow_redirects=False)
     assert r.headers["HX-Redirect"] == "/login"
     # ...while the one that changed it stays logged in, again and again.
     assert onboarded_client.get("/settings", follow_redirects=False).status_code == 200
