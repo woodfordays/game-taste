@@ -10,7 +10,7 @@ from starlette.datastructures import FormData
 
 from app.auth import advance_step
 from app.models import AiCall, JobAssignment, Provider
-from app.services.ai import Job, ProviderConfig, ProviderKind
+from app.services.ai import CHECK_TIMEOUT_SECONDS, Job, ProviderConfig, ProviderKind
 from app.services.ai_setup import (
     AiSetup,
     CheckLine,
@@ -606,6 +606,13 @@ def test_run_checks_labels_every_check_in_order(db, services):
         "Tavily web search",
     ]
     assert all(isinstance(line, CheckLine) and line.result.ok for line in lines)
+
+
+def test_run_checks_bound_every_model_call_and_never_retry(db, services, fake_ai):
+    setup, _ = parse_ai_form(form_of(VALID), blank_setup())
+    run_ai_checks(db, setup, services)
+    assert fake_ai.timeouts == [CHECK_TIMEOUT_SECONDS] * 3
+    assert fake_ai.retries == [False] * 3
 
 
 def test_run_checks_reports_each_failure_separately(db, services, fake_ai, fake_search):

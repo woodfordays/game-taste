@@ -20,6 +20,7 @@ from app.models import AiCall, Provider
 from app.prompts import Prompt, load_prompt
 from app.services import ai_setup
 from app.services.ai import (
+    JOB_CALL_TIMEOUT_SECONDS,
     AIError,
     AnthropicAdapter,
     GeminiAdapter,
@@ -377,6 +378,30 @@ def test_a_failed_call_on_the_retry_is_call_failed_and_both_are_logged(
     assert err.value.reason == "call_failed"
     assert err.value.message == "The model didn't answer: ConnectionError: down"
     assert first.error is None and second.error == "ConnectionError: down"
+
+
+def test_every_job_call_is_bounded_and_keeps_the_sdk_retries(
+    db, app, services, fake_ai, saved_ai_setup
+):
+    # A model call that never returns would hold the worker for good, so each one is
+    # bounded. The bound matches the OpenAI and Anthropic SDK defaults.
+    assert JOB_CALL_TIMEOUT_SECONDS == 600
+    fake_ai.replies["sample-local"] = ["not json", '{"value": 3}']
+    ask(db, app, services)
+    assert len(fake_ai.calls) == 2  # the first call and the retry
+    assert fake_ai.timeouts == [JOB_CALL_TIMEOUT_SECONDS] * 2
+    assert fake_ai.retries == [True, True]
+
+
+def test_a_call_that_times_out_is_a_failed_call_and_is_logged(
+    db, app, services, fake_ai, saved_ai_setup
+):
+    fake_ai.fail("sample-local", TimeoutError("timed out"))
+    with pytest.raises(StructuredReplyError) as err:
+        ask(db, app, services)
+    assert err.value.reason == "call_failed" and len(fake_ai.calls) == 1
+    [row] = logged_calls(db)
+    assert row.error == "TimeoutError: timed out"
 
 
 def test_replies_can_be_computed_from_the_prompt(

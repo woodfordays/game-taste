@@ -22,6 +22,10 @@ if TYPE_CHECKING:
 MAX_OUTPUT_TOKENS = 8192
 # A connection check gives up after this many seconds, and does not retry.
 CHECK_TIMEOUT_SECONDS = 30
+# A job's model call (a refresh, for one) gives up after this many seconds, so a call that
+# never returns can't hold the worker for good. It matches the OpenAI and Anthropic SDK
+# defaults. Gemini's SDK has no timeout of its own. The SDK's retries stay on.
+JOB_CALL_TIMEOUT_SECONDS = 600
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 CONNECTION_TEST_PROMPT = "Reply with the single word: ok"
 LOCAL_URL_HINT = "Check the URL. Most local servers end in /v1."
@@ -80,11 +84,18 @@ class Completion:
 
 class Adapter(Protocol):
     def complete(
-        self, model: str, prompt: str, *, timeout: float | None = None
+        self,
+        model: str,
+        prompt: str,
+        *,
+        timeout: float | None = None,
+        retries: bool = True,
     ) -> Completion:
-        """Ask the model. A timeout (seconds) also turns off the SDK's retries for the call.
+        """Ask the model.
 
-        `None` keeps the SDK's own timeout and retries, which suit long real work.
+        A `timeout` (seconds) is how long the call may take. `None` keeps the SDK's own
+        timeout. `retries=False` turns the SDK's retries off for the call, so a failure
+        comes back at once. `retries=True` keeps the SDK's own retry behavior.
         """
         ...
 
@@ -116,6 +127,19 @@ class CheckResult:
 # The adapters build their SDK client on first use, so making one never touches the network.
 
 
+def _with_call_options(client: Any, timeout: float | None, retries: bool) -> Any:
+    """An OpenAI or Anthropic client set up for one call: the same one if nothing changes.
+
+    `with_options` makes a copy, so the shared client is never altered.
+    """
+    options: dict[str, Any] = {}
+    if timeout is not None:
+        options["timeout"] = timeout
+    if not retries:
+        options["max_retries"] = 0
+    return client.with_options(**options) if options else client
+
+
 class OpenAICompatibleAdapter:
     """OpenAI, OpenRouter and local servers all speak the chat completions API."""
 
@@ -132,11 +156,14 @@ class OpenAICompatibleAdapter:
         return self._client
 
     def complete(
-        self, model: str, prompt: str, *, timeout: float | None = None
+        self,
+        model: str,
+        prompt: str,
+        *,
+        timeout: float | None = None,
+        retries: bool = True,
     ) -> Completion:
-        client = self._get_client()
-        if timeout is not None:
-            client = client.with_options(timeout=timeout, max_retries=0)
+        client = _with_call_options(self._get_client(), timeout, retries)
         response = client.chat.completions.create(
             model=model, messages=[{"role": "user", "content": prompt}]
         )
@@ -165,11 +192,14 @@ class AnthropicAdapter:
         return self._client
 
     def complete(
-        self, model: str, prompt: str, *, timeout: float | None = None
+        self,
+        model: str,
+        prompt: str,
+        *,
+        timeout: float | None = None,
+        retries: bool = True,
     ) -> Completion:
-        client = self._get_client()
-        if timeout is not None:
-            client = client.with_options(timeout=timeout, max_retries=0)
+        client = _with_call_options(self._get_client(), timeout, retries)
         response = client.messages.create(
             model=model,
             max_tokens=MAX_OUTPUT_TOKENS,
@@ -200,17 +230,25 @@ class GeminiAdapter:
         return self._client
 
     def complete(
-        self, model: str, prompt: str, *, timeout: float | None = None
+        self,
+        model: str,
+        prompt: str,
+        *,
+        timeout: float | None = None,
+        retries: bool = True,
     ) -> Completion:
         extra: dict[str, Any] = {}
-        if timeout is not None:
+        if timeout is not None or not retries:
             from google.genai import types
 
-            # Gemini's timeout is in milliseconds. One attempt means no retries.
+            # Gemini's timeout is in milliseconds. One attempt means no retries. Left unset,
+            # retry_options leaves the SDK's own retry behavior alone.
             extra["config"] = types.GenerateContentConfig(
                 http_options=types.HttpOptions(
-                    timeout=round(timeout * 1000),
-                    retry_options=types.HttpRetryOptions(attempts=1),
+                    timeout=None if timeout is None else round(timeout * 1000),
+                    retry_options=None
+                    if retries
+                    else types.HttpRetryOptions(attempts=1),
                 )
             )
         response = self._get_client().models.generate_content(
@@ -272,13 +310,15 @@ def call_and_log(
     adapter_factory=make_adapter,
     now: datetime | None = None,
     timeout: float | None = None,
+    retries: bool = True,
 ) -> Completion:
     """Ask the model and record the call, whether it worked or not.
 
     `prompt_name` and `prompt_version` say which prompt file made the request (the version
-    is blank for a prompt that isn't a file). A `timeout` in seconds is passed to the adapter
-    (see `Adapter.complete`). The returned completion's `call_id` is the logged row's id.
-    On failure the error is logged and an `AIError` carrying the same text is raised.
+    is blank for a prompt that isn't a file). `timeout` (seconds) and `retries` are passed
+    to the adapter (see `Adapter.complete`). The returned completion's `call_id` is the
+    logged row's id. On failure the error is logged and an `AIError` carrying the same text
+    is raised.
     """
     row = AiCall(
         job=job.value if job else None,
@@ -295,7 +335,9 @@ def call_and_log(
     failure: Exception | None = None
     completion: Completion | None = None
     try:
-        completion = adapter_factory(cfg).complete(model, prompt, timeout=timeout)
+        completion = adapter_factory(cfg).complete(
+            model, prompt, timeout=timeout, retries=retries
+        )
     except Exception as exc:
         failure = exc
     row.duration_ms = round((time.perf_counter() - started) * 1000)
@@ -334,6 +376,7 @@ def check_model(
             adapter_factory=adapter_factory,
             now=now,
             timeout=CHECK_TIMEOUT_SECONDS,
+            retries=False,
         )
     except AIError as err:
         cause = err.__cause__ or err
@@ -472,6 +515,7 @@ def complete_json(
                 run_ref=run_ref,
                 adapter_factory=services.adapter_factory,
                 now=now,
+                timeout=JOB_CALL_TIMEOUT_SECONDS,
             )
         except AIError as err:
             raise StructuredReplyError(

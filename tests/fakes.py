@@ -15,10 +15,16 @@ class _FakeAdapter:
         self._cfg = cfg
 
     def complete(
-        self, model: str, prompt: str, *, timeout: float | None = None
+        self,
+        model: str,
+        prompt: str,
+        *,
+        timeout: float | None = None,
+        retries: bool = True,
     ) -> Completion:
         self._factory.calls.append((self._cfg.kind, model, prompt))
         self._factory.timeouts.append(timeout)
+        self._factory.retries.append(retries)
         failure = self._factory.failures.get(model)
         if failure is not None:
             raise failure
@@ -34,9 +40,10 @@ class _FakeAdapter:
 class FakeAdapterFactory:
     """Stands in for `make_adapter`.
 
-    `.calls` holds one (kind, model, prompt) per `complete()`, and `.timeouts` the
-    timeout each of those calls was given. Every reply is "ok" unless
-    `.replies[model]` says otherwise, and a model passed to `.fail()` raises.
+    `.calls` holds one (kind, model, prompt) per `complete()`, and `.timeouts` and
+    `.retries` the timeout and the retries setting each of those calls was given.
+    Every reply is "ok" unless `.replies[model]` says otherwise, and a model passed to
+    `.fail()` raises.
     `.replies[model]` is a str, a list of str (used in order, the last one repeating; the
     place in the list is counted per model over the factory's life), or a function that
     takes the prompt and returns the reply. `.stop_reasons[model]` is the `stop_reason`
@@ -46,6 +53,7 @@ class FakeAdapterFactory:
     def __init__(self) -> None:
         self.calls: list[tuple[ProviderKind, str, str]] = []
         self.timeouts: list[float | None] = []
+        self.retries: list[bool] = []
         self.replies: dict[str, str | list[str] | Callable[[str], str]] = {}
         self.stop_reasons: dict[str, str | None] = {}
         self.failures: dict[str, Exception] = {}

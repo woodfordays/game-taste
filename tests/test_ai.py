@@ -255,7 +255,7 @@ def _gemini_reply():
 # request, so they show what timeout and retry settings that request would run with.
 
 
-def test_openai_adapter_applies_a_timeout_and_no_retries(monkeypatch):
+def test_openai_adapter_applies_a_timeout_and_the_retries_setting(monkeypatch):
     seen = []
 
     def fake_create(self, **kwargs):
@@ -264,20 +264,31 @@ def test_openai_adapter_applies_a_timeout_and_no_retries(monkeypatch):
 
     monkeypatch.setattr(OpenAICompletions, "create", fake_create)
     adapter = OpenAICompatibleAdapter("sk-sample", None)
+    base = adapter._get_client()
+    assert base.max_retries > 0
 
-    adapter.complete("sample-model", "Say hi", timeout=12.5)
+    # A timeout with retries off: both apply.
+    adapter.complete("sample-model", "Say hi", timeout=12.5, retries=False)
     assert seen[-1][1:] == (12.5, 0)
 
-    # No timeout: the client's own defaults (long timeout, retries) stay in force.
+    # A timeout with retries on (the default): the SDK keeps its own retries.
+    adapter.complete("sample-model", "Say hi", timeout=12.5)
+    assert seen[-1][1:] == (12.5, base.max_retries)
+    adapter.complete("sample-model", "Say hi", timeout=12.5, retries=True)
+    assert seen[-1][1:] == (12.5, base.max_retries)
+
+    # Retries off alone: the SDK keeps its own timeout.
+    adapter.complete("sample-model", "Say hi", retries=False)
+    assert seen[-1][1:] == (base.timeout, 0)
+
+    # Neither: the client's own defaults (long timeout, retries) stay in force.
     adapter.complete("sample-model", "Say hi")
-    base = adapter._get_client()
     assert seen[-1] == (base, base.timeout, base.max_retries)
-    assert base.max_retries > 0
-    # The shared client itself is untouched by the bounded call.
-    assert seen[0][0] is not base
+    # The shared client itself is untouched by the bounded calls.
+    assert all(client is not base for client, *_ in seen[:-1])
 
 
-def test_anthropic_adapter_applies_a_timeout_and_no_retries(monkeypatch):
+def test_anthropic_adapter_applies_a_timeout_and_the_retries_setting(monkeypatch):
     seen = []
 
     def fake_create(self, **kwargs):
@@ -286,18 +297,24 @@ def test_anthropic_adapter_applies_a_timeout_and_no_retries(monkeypatch):
 
     monkeypatch.setattr(AnthropicMessages, "create", fake_create)
     adapter = AnthropicAdapter("ant-sample")
+    base = adapter._get_client()
+    assert base.max_retries > 0
 
-    adapter.complete("sample-model", "Say hi", timeout=12.5)
+    adapter.complete("sample-model", "Say hi", timeout=12.5, retries=False)
     assert seen[-1][1:] == (12.5, 0)
 
+    adapter.complete("sample-model", "Say hi", timeout=12.5)
+    assert seen[-1][1:] == (12.5, base.max_retries)
+
+    adapter.complete("sample-model", "Say hi", retries=False)
+    assert seen[-1][1:] == (base.timeout, 0)
+
     adapter.complete("sample-model", "Say hi")
-    base = adapter._get_client()
     assert seen[-1] == (base, base.timeout, base.max_retries)
-    assert base.max_retries > 0
-    assert seen[0][0] is not base
+    assert all(client is not base for client, *_ in seen[:-1])
 
 
-def test_gemini_adapter_applies_a_timeout_and_no_retries(monkeypatch):
+def test_gemini_adapter_applies_a_timeout_and_the_retries_setting(monkeypatch):
     seen = []
 
     def fake_generate_content(self, *, model, contents, config=None):
@@ -307,19 +324,31 @@ def test_gemini_adapter_applies_a_timeout_and_no_retries(monkeypatch):
     monkeypatch.setattr(GeminiModels, "generate_content", fake_generate_content)
     adapter = GeminiAdapter("gem-sample")
 
-    adapter.complete("sample-model", "Say hi", timeout=12.5)
+    adapter.complete("sample-model", "Say hi", timeout=12.5, retries=False)
     options = seen[-1].http_options
     assert options.timeout == 12500  # Gemini counts in milliseconds
     assert options.retry_options.attempts == 1  # one attempt: no retries
 
-    # No timeout: no per-request options at all, so the client's defaults apply.
+    # A timeout with retries on: only the timeout is set, so the SDK's retries stay.
+    adapter.complete("sample-model", "Say hi", timeout=12.5)
+    options = seen[-1].http_options
+    assert options.timeout == 12500
+    assert options.retry_options is None
+
+    # Retries off alone: no timeout is set.
+    adapter.complete("sample-model", "Say hi", retries=False)
+    options = seen[-1].http_options
+    assert options.timeout is None
+    assert options.retry_options.attempts == 1
+
+    # Neither: no per-request options at all, so the client's defaults apply.
     adapter.complete("sample-model", "Say hi")
     assert seen[-1] is None
 
 
-def test_call_and_log_passes_the_timeout_to_the_adapter(db, fake_ai):
+def test_call_and_log_passes_the_timeout_and_retries_to_the_adapter(db, fake_ai):
     cfg = ProviderConfig(ProviderKind.OPENAI, "sk-sample", None)
-    for timeout in (None, 7):
+    for timeout, retries in ((None, True), (7, False), (7, True)):
         call_and_log(
             db,
             cfg,
@@ -329,18 +358,34 @@ def test_call_and_log_passes_the_timeout_to_the_adapter(db, fake_ai):
             prompt_name="sample_prompt",
             adapter_factory=fake_ai,
             timeout=timeout,
+            retries=retries,
         )
-    assert fake_ai.timeouts == [None, 7]
+    assert fake_ai.timeouts == [None, 7, 7]
+    assert fake_ai.retries == [True, False, True]
 
 
-def test_check_model_bounds_the_call_with_a_timeout(db, fake_ai):
+def test_call_and_log_keeps_the_sdk_retries_unless_told_otherwise(db, fake_ai):
+    call_and_log(
+        db,
+        ProviderConfig(ProviderKind.OPENAI, "sk-sample", None),
+        "sample-model",
+        "Say ok",
+        job=None,
+        prompt_name="sample_prompt",
+        adapter_factory=fake_ai,
+    )
+    assert fake_ai.timeouts == [None] and fake_ai.retries == [True]
+
+
+def test_check_model_bounds_the_call_with_a_timeout_and_no_retries(db, fake_ai):
     assert CHECK_TIMEOUT_SECONDS == 30
     cfg = ProviderConfig(ProviderKind.OPENAI, "sk-sample", None)
     check_model(db, cfg, "sample-model", job=None, adapter_factory=fake_ai)
     fake_ai.fail("broken-model", RuntimeError("down"))
     check_model(db, cfg, "broken-model", job=None, adapter_factory=fake_ai)
-    # Failing checks are bounded too.
+    # Failing checks are bounded too, and a check never retries.
     assert fake_ai.timeouts == [CHECK_TIMEOUT_SECONDS, CHECK_TIMEOUT_SECONDS]
+    assert fake_ai.retries == [False, False]
 
 
 def test_a_timed_out_check_reads_as_a_failed_connection(db):
@@ -348,7 +393,7 @@ def test_a_timed_out_check_reads_as_a_failed_connection(db):
         def __call__(self, cfg):
             return self
 
-        def complete(self, model, prompt, *, timeout=None):
+        def complete(self, model, prompt, *, timeout=None, retries=True):
             raise TimeoutError(f"no reply in {timeout} seconds")
 
     result = check_model(

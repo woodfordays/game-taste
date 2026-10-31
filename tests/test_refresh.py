@@ -25,6 +25,7 @@ from app.models import (
 )
 from app.prompts import load_prompt
 from app.routines import refresh as refresh_module
+from app.services.ai import JOB_CALL_TIMEOUT_SECONDS
 from app.services.profiles import (
     ProfileTarget,
     ProfileUpdate,
@@ -254,6 +255,34 @@ def test_a_refresh_with_no_reviews_records_only_steam(app, db, saved_ai_setup, f
     run = refresh(app, db)
     assert run.details == [] and (run.profiles_updated, run.profiles_failed) == (0, 0)
     assert run.finished_at is not None and fake_ai.calls == []
+
+
+def test_every_model_call_of_a_refresh_is_bounded(
+    app, db, games, saved_ai_setup, fake_ai
+):
+    # A call that never returns would leave the job running until the app restarts.
+    publish(db, 10, Lane.SOLO, ReviewForm(rating=8, text="ok"), FIXED_NOW)
+    fake_ai.replies["sample-local"] = ["not json", "still not json"]
+    run = refresh(app, db)
+    assert run.profiles_failed == 1 and len(fake_ai.calls) == 2  # the retry counts too
+    assert fake_ai.timeouts == [JOB_CALL_TIMEOUT_SECONDS] * 2
+    assert fake_ai.retries == [True, True]
+
+
+def test_a_model_call_that_times_out_fails_the_profile_and_the_next_refresh_retries(
+    app, db, games, saved_ai_setup, fake_ai
+):
+    v = review(db, 10, "ok")
+    fake_ai.fail("sample-local", TimeoutError("timed out"))
+    run = refresh(app, db)
+    assert run.details[0]["outcome"] == "failed"
+    assert run.details[0]["message"].startswith("The model didn't answer: TimeoutError")
+    assert db.get(Job, run.job_id).status == "done"
+
+    fake_ai.failures.clear()
+    fake_ai.replies["sample-local"] = profile_reply(loved=[loved(v.id)])
+    run = refresh(app, db)
+    assert run.details[0]["outcome"] == "updated"
 
 
 def test_every_call_is_logged_with_the_prompt_and_the_run(
