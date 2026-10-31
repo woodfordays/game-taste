@@ -10,6 +10,7 @@ from starlette.datastructures import FormData
 
 from app.models import Game
 from app.routes.reviews import FormInputError, form_from_request
+from app.services.people import add_group, add_person
 from app.services.reviews import (
     Lane,
     ReviewForm,
@@ -1001,8 +1002,6 @@ def test_people_options_adds_the_group_to_what_was_ticked(
     onboarded_client, db, games, people
 ):
     sam, alex, crew = people
-    from app.services.people import add_person
-
     riley = add_person(db, "Riley", FIXED_NOW)
     r = onboarded_client.get(
         f"/people/options?named_group_id={crew.id}&people={riley.id}&lane=five_plus"
@@ -1025,6 +1024,170 @@ def test_people_options_hint_follows_the_lane(onboarded_client, games, people):
         "This looks like"
         not in onboarded_client.get(f"/people/options?people={sam.id}&lane=two").text
     )
+
+
+def person_boxes(raw: str) -> dict[int, tuple[bool, bool]]:
+    """For each person's checkbox, by id: (checked, disabled)."""
+    boxes = {}
+    for tag in re.findall(r'<input[^>]*name="people"[^>]*>', raw):
+        person = int(re.search(r'value="(\d+)"', tag)[1])
+        boxes[person] = (" checked" in tag, " disabled" in tag)
+    return boxes
+
+
+@pytest.fixture
+def riley(db, people):
+    """A third person, outside the group "Sample Crew"."""
+    return add_person(db, "Riley", FIXED_NOW)
+
+
+def test_a_chosen_groups_members_are_checked_and_locked(
+    onboarded_client, games, people, riley
+):
+    sam, alex, crew = people
+    raw = onboarded_client.get(
+        f"/people/options?named_group_id={crew.id}&people={riley.id}&lane=three_four"
+    ).text
+    assert person_boxes(raw) == {
+        sam.id: (True, True),  # in the group: counted, and not for unticking
+        alex.id: (True, True),
+        riley.id: (True, False),  # outside it: still her own choice
+    }
+    assert raw.count("is-disabled") == 2  # Ember's look for the two locked ones
+    assert (
+        "Everyone in Sample Crew counts as played. "
+        "Choose No group to pick people one by one." in raw
+    )
+
+
+def test_people_outside_the_group_stay_tickable(onboarded_client, games, people, riley):
+    sam, alex, crew = people
+    raw = onboarded_client.get(f"/people/options?named_group_id={crew.id}&lane=two").text
+    assert person_boxes(raw)[riley.id] == (False, False)
+
+
+def test_no_group_locks_nobody_and_shows_no_group_hint(
+    onboarded_client, games, people, riley
+):
+    sam, alex, crew = people
+    raw = onboarded_client.get(
+        f"/people/options?named_group_id=&people={sam.id}&lane=two"
+    ).text
+    assert person_boxes(raw) == {
+        sam.id: (True, False),
+        alex.id: (False, False),
+        riley.id: (False, False),
+    }
+    assert "counts as played" not in raw and "is-disabled" not in raw
+    unknown = onboarded_client.get("/people/options?named_group_id=9999&lane=two").text
+    assert "counts as played" not in unknown and "disabled" not in unknown
+
+
+def test_the_group_hint_escapes_the_name(onboarded_client, db, games, people):
+    sam, alex, crew = people
+    odd = add_group(db, 'R&D <i>"Crew"</i>', [sam.id], FIXED_NOW)
+    raw = onboarded_client.get(f"/people/options?named_group_id={odd.id}&lane=two").text
+    assert "<i>" not in raw
+    assert "Everyone in R&amp;D &lt;i&gt;&#34;Crew&#34;&lt;/i&gt; counts as played." in raw
+
+
+def test_the_group_hint_describes_the_people_boxes(onboarded_client, games, people):
+    sam, alex, crew = people
+    raw = onboarded_client.get(f"/people/options?named_group_id={crew.id}&lane=two").text
+    assert re.search(r'<fieldset[^>]*aria-describedby="people-group-hint"', raw)
+    assert 'id="people-group-hint"' in raw
+    plain = onboarded_client.get("/people/options?lane=two").text
+    assert "people-group-hint" not in plain
+
+
+def test_the_head_count_hint_counts_the_whole_group(
+    onboarded_client, games, people, riley
+):
+    sam, alex, crew = people
+    # The locked members aren't posted, so only the extra is in `people`.
+    raw = onboarded_client.get(
+        f"/people/options?named_group_id={crew.id}&people={riley.id}&lane=two"
+    ).text
+    assert (
+        "You and 3 others make 4 players. This looks like the Three to four lane." in raw
+    )
+    five = onboarded_client.get(
+        f"/people/options?named_group_id={crew.id}&people={riley.id}&lane=three_four"
+    ).text
+    assert "This looks like" not in five  # 4 players fit three to four
+
+
+def test_the_dialog_locks_a_drafts_group_members(
+    onboarded_client, db, games, people, riley
+):
+    sam, alex, crew = people
+    save_draft(
+        db,
+        10,
+        Lane.TWO,
+        ReviewForm(people=[riley.id], named_group_id=crew.id, group_text=" Crew words "),
+        FIXED_NOW,
+    )
+    raw = dialog(onboarded_client, lane="two")
+    assert person_boxes(raw) == {
+        sam.id: (True, True),
+        alex.id: (True, True),
+        riley.id: (True, False),
+    }
+    assert "Everyone in Sample Crew counts as played." in raw
+    assert "You and 3 others make 4 players." in raw
+    assert textarea(raw, "group_text") == " Crew words "  # the rest is untouched
+    assert selected_option(raw, "named_group_id") == str(crew.id)
+
+
+def test_the_dialog_without_a_group_locks_nobody(
+    onboarded_client, db, games, people, riley
+):
+    sam, alex, crew = people
+    save_draft(db, 10, Lane.TWO, ReviewForm(people=[sam.id, riley.id]), FIXED_NOW)
+    raw = dialog(onboarded_client, lane="two")
+    assert person_boxes(raw) == {
+        sam.id: (True, False),
+        alex.id: (False, False),
+        riley.id: (True, False),
+    }
+    assert "counts as played" not in raw
+
+
+def test_publishing_with_a_group_and_an_extra_records_both(
+    onboarded_client, db, games, people, riley
+):
+    sam, alex, crew = people
+    # What the browser posts: the locked members are left out.
+    post(
+        onboarded_client,
+        "two",
+        action="publish",
+        rating="8",
+        named_group_id=str(crew.id),
+        people=[str(riley.id)],
+    )
+    version = history(db, 10, Lane.TWO)[0]
+    assert version.named_group_id == crew.id
+    assert sorted(p.person_id for p in version.people) == sorted(
+        [sam.id, alex.id, riley.id]
+    )
+
+
+def test_a_draft_with_a_group_keeps_only_the_extras_ticked(
+    onboarded_client, db, games, people, riley
+):
+    sam, alex, crew = people
+    post(
+        onboarded_client,
+        "two",
+        action="draft",
+        named_group_id=str(crew.id),
+        people=[str(riley.id)],
+    )
+    form, source = load_form(db, 10, Lane.TWO)
+    assert source == "draft" and form.people == [riley.id]
+    assert form.named_group_id == crew.id
 
 
 def test_people_options_without_a_group_or_people(onboarded_client, games, people):

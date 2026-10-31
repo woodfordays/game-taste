@@ -17,9 +17,14 @@ from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
 from app.db import get_db
-from app.models import Game, ReviewVersion
+from app.models import Game, NamedGroup, ReviewVersion
 from app.routes.library import MAX_APPID
-from app.services.people import PICK_PEOPLE, list_groups, list_people
+from app.services.people import (
+    PICK_PEOPLE,
+    group_member_ids,
+    list_groups,
+    list_people,
+)
 from app.services.reviews import (
     LANE_LABELS,
     OPTION_INVALID,
@@ -163,15 +168,33 @@ def _lane_tabs(states: dict[Lane, LaneState], current: Lane) -> list[LaneTab]:
     ]
 
 
+@dataclass
+class WhoPlayed:
+    """What the "who played" checkboxes show."""
+
+    selected: set[int]  # the ids to tick: the people ticked and the named group's members
+    locked: set[int]  # the group's members: ticked and not editable, since the group counts them
+    group: NamedGroup | None  # the group chosen, for its name in the hint
+    hint: str | None  # the head-count hint
+
+
 def _who_played(
     db: Session, lane: Lane | None, people: list[int], group_id: int | None
-) -> tuple[set[int], str | None]:
-    """The ids to tick, and the head-count hint for `lane` (none without a lane).
+) -> WhoPlayed:
+    """The ticks, the locked members and the head-count hint for `lane` (none without a lane).
 
-    The ticked people and the named group's members all count, once each."""
+    The ticked people and the named group's members all count, once each. The group's
+    members are shown ticked and locked, so the page says what the server does: they play
+    whatever is ticked, and a locked box isn't posted, so `people` holds only the extras.
+    A group that doesn't exist locks nobody."""
+    group = None if group_id is None else db.get(NamedGroup, group_id)
     everyone = effective_people(db, people, group_id)
-    hint = None if lane is None else head_count_hint(lane, len(everyone))
-    return set(everyone), hint
+    return WhoPlayed(
+        selected=set(everyone),
+        locked=set() if group is None else set(group_member_ids(db, group.id)),
+        group=group,
+        hint=None if lane is None else head_count_hint(lane, len(everyone)),
+    )
 
 
 def _has_details(form: ReviewForm, coop: bool) -> bool:
@@ -218,10 +241,10 @@ def _dialog(
     first opening animates. `refresh_card` adds the event that refreshes the Home card.
     """
     coop = lane is not Lane.SOLO
-    selected, hint = (
+    who = (
         _who_played(db, lane, form.people, form.named_group_id)
         if coop
-        else (set(), None)
+        else WhoPlayed(set(), set(), None, None)
     )
     states = lane_states(db, game.appid)
     response = render(
@@ -240,8 +263,10 @@ def _dialog(
         coop=coop,
         people=list_people(db),
         groups=list_groups(db) if coop else [],
-        selected=selected,
-        hint=hint,
+        selected=who.selected,
+        locked=who.locked,
+        chosen_group=who.group,
+        hint=who.hint,
         details_open=_has_details(form, coop) or error in (OPTION_INVALID, PICK_PEOPLE),
     )
     if refresh_card:
@@ -353,20 +378,23 @@ def people_options(
     db: Session = Depends(get_db),
 ):
     """The "who played" checkboxes with the named group's members added to the people
-    already ticked, and the head-count hint for `lane`."""
+    already ticked (and locked, since the group counts them), and the head-count hint for
+    `lane`. `people` is only the extras: a locked box isn't sent."""
     try:
         ticked = _ids(people)
         group_id = int(named_group_id) if named_group_id.strip() else None
     except ValueError:
         raise HTTPException(status_code=400, detail=PICK_PEOPLE) from None
-    selected, hint = _who_played(db, lane, ticked, group_id)
+    who = _who_played(db, lane, ticked, group_id)
     return render(
         request,
         "partials/people_options.html",
         people=list_people(db),
-        selected=selected,
+        selected=who.selected,
+        locked=who.locked,
+        chosen_group=who.group,
         lane=lane,
-        hint=hint,
+        hint=who.hint,
     )
 
 
