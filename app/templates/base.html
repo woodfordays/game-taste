@@ -69,11 +69,12 @@
       var region = document.getElementById("toast-region");
       var list = document.getElementById("toasts");
 
-      // A popover sits in the top layer in the order it was shown, and a modal dialog opened later sits above it. Hiding the region
-      // and showing it again puts it last, so a toast that arrives while a dialog is open is drawn over the dialog. Nothing is painted
-      // between the two calls, so toasts already on screen don't animate in again.
+      // A popover sits in the top layer in the order it was shown, and a modal dialog shown later sits above it. Hiding the region and
+      // showing it again puts it last, so toasts are drawn over a dialog: raise() runs when a toast is added and when a dialog opens,
+      // whichever came first. Nothing is painted between the two calls, so toasts already on screen don't animate in again.
+      var popovers = typeof region.showPopover === "function"; // Without them the region is fixed above the page by z-index.
       function raise() {
-        if (typeof region.showPopover !== "function") return; // Without popovers the region is fixed above the page by z-index.
+        if (!popovers) return;
         try { region.hidePopover(); } catch (error) { /* it was not open */ }
         try { region.showPopover(); } catch (error) { /* it is already open */ }
       }
@@ -81,25 +82,36 @@
       new MutationObserver(function (records) {
         if (records.some(function (record) { return record.addedNodes.length > 0; })) raise();
       }).observe(list, { childList: true });
+      // showModal() sets the dialog's open attribute, and this runs once it has finished, so the region goes back above the dialog.
+      new MutationObserver(function (records) {
+        var opened = records.some(function (record) { return record.target.tagName === "DIALOG" && record.target.open; });
+        if (opened && list.firstElementChild) raise();
+      }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["open"] });
 
       // A modal dialog makes everything outside it inert, a toast drawn over it included. The toast can't be clicked, and a click on it
-      // lands on whatever the dialog has underneath, such as Publish review. So while a dialog is open the click is caught here before
-      // it gets there: on a toast's Dismiss button it dismisses the toast, and anywhere else on a toast it does nothing.
+      // lands on whatever the dialog has underneath, such as Publish review. So while a dialog is open a press on a toast is caught here
+      // before it gets there: a click on a toast's Dismiss button dismisses the toast, and anywhere else on a toast nothing happens.
+      // This is only right because raise() keeps the region above the dialog, so the toast under the pointer is the one on top.
       function over(element, event) {
         var box = element.getBoundingClientRect();
         return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
       }
-      document.addEventListener("click", function (event) {
-        if (!document.querySelector("dialog[open]")) return;
+      function guard(event) {
+        // A click from the keyboard or a script has no pointer position (its detail is 0).
+        if (event.type === "click" && event.detail === 0) return;
+        if (!region.matches(":popover-open") || !document.querySelector("dialog:modal")) return;
         for (var toast = list.firstElementChild; toast; toast = toast.nextElementSibling) {
           if (!over(toast, event)) continue;
           event.preventDefault();
           event.stopPropagation();
           var close = toast.querySelector(".em-toast__close");
-          if (close && over(close, event)) toast.remove();
+          if (event.type === "click" && close && over(close, event)) toast.remove();
           return;
         }
-      }, true);
+      }
+      if (popovers) {
+        ["pointerdown", "mousedown", "click"].forEach(function (type) { document.addEventListener(type, guard, true); });
+      }
 
       // The same markup as the toast macro in partials/toast.html, for a danger toast. A danger toast stays until it is dismissed.
       var ICON = '<svg class="em-icon em-toast__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>';

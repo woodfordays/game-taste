@@ -230,11 +230,30 @@ def test_the_script_puts_the_region_back_on_top_when_a_toast_arrives(
     assert "MutationObserver" in text
 
 
+def test_the_region_goes_back_on_top_when_a_dialog_opens(onboarded_client):
+    # A toast added before a dialog opens would otherwise end up under it. showModal() sets the
+    # dialog's open attribute, so the script watches that.
+    text = onboarded_client.get("/").text
+    assert 'attributeFilter: ["open"]' in text and '"DIALOG"' in text
+
+
 def test_a_toast_over_a_dialog_catches_the_click_meant_for_it(onboarded_client):
     # A modal dialog makes the toast inert, so without this a click on its Dismiss button would
     # land on the dialog's own button underneath, such as Publish review.
     text = onboarded_client.get("/").text
-    assert 'dialog[open]' in text and "stopPropagation" in text
+    assert "dialog:modal" in text and "stopPropagation" in text
+    # Pointer presses are caught like the click, so the button under the toast isn't focused.
+    assert '"pointerdown"' in text and '"mousedown"' in text and '"click"' in text
+
+
+def test_the_click_guard_leaves_alone_what_it_cannot_be_covering(onboarded_client):
+    text = onboarded_client.get("/").text
+    # Only while the region is open (shown, so above the dialog), and not for a click from the
+    # keyboard or a script, which has no pointer position (detail is 0).
+    assert 'region.matches(":popover-open")' in text
+    assert 'event.type === "click" && event.detail === 0' in text
+    # Without popovers the toast is under the dialog and nothing is covered, so no guard at all.
+    assert "if (popovers) {" in text
 
 
 def test_a_failed_request_gets_one_toast_not_two(onboarded_client):
