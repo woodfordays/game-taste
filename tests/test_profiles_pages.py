@@ -25,12 +25,20 @@ from app.services.profiles import (
     save_version,
     version_history,
 )
-from app.services.reviews import Lane, ReviewForm, publish
+from app.services.reviews import Lane, ReviewForm, publish, save_draft
 from app.services.secrets import hash_password
 from app.services.settings import set_setting
 
 EMPTY_LANE = "No reviews in this lane yet. Profiles fill in after you publish reviews."
 EMPTY_GROUP = "No reviews tagged with this group yet."
+WAITING_LANE = (
+    "Your reviews in this lane are waiting for the next refresh. "
+    "The profile builds then."
+)
+WAITING_GROUP = (
+    "Reviews tagged with this group are waiting for the next refresh. "
+    "The profile builds then."
+)
 HTML_TEXT = "<script>alert(1)</script>"
 HTML_ESCAPED = "&lt;script&gt;alert(1)&lt;/script&gt;"
 
@@ -581,13 +589,96 @@ def test_empty_group_page_shows_the_empty_state(onboarded_client, people):
     assert re.search(r"<h1[^>]*>\s*Sample Crew\s*</h1>", r.text)
 
 
-def test_a_profile_with_no_version_yet_shows_the_empty_state(
+def test_a_profile_with_no_version_yet_says_the_reviews_are_waiting(
     onboarded_client, db, solo_profile
 ):
     # The row exists once a refresh starts on the lane, and stays if its first update failed.
     r = onboarded_client.get("/profiles/lane/solo")
-    assert r.status_code == 200 and EMPTY_LANE in r.text
+    assert r.status_code == 200 and WAITING_LANE in r.text and EMPTY_LANE not in r.text
     assert onboarded_client.get("/profiles/lane/solo?version=1").status_code == 404
+
+
+def test_a_profile_row_with_no_reviews_behind_it_is_empty(onboarded_client, db):
+    ensure_profile(db, lane_target(Lane.TWO), FIXED_NOW)
+    text = onboarded_client.get("/profiles/lane/two").text
+    assert EMPTY_LANE in text and WAITING_LANE not in text
+
+
+# --- reviews waiting for a refresh -------------------------------------------------
+
+
+def test_published_reviews_without_a_profile_are_waiting_on_the_list(
+    onboarded_client, solo_review
+):
+    text = onboarded_client.get("/profiles").text
+    assert text.count(WAITING_LANE) == 1
+    assert text.count(EMPTY_LANE) == 3
+    # The waiting message is on the Solo card, the first one.
+    first = re.search(r'<li[^>]*class="em-card".*?</li>', text, re.S)[0]
+    assert "Solo" in visible(first) and WAITING_LANE in visible(first)
+    assert "View profile" not in text
+
+
+def test_published_reviews_without_a_profile_are_waiting_on_the_page(
+    onboarded_client, solo_review
+):
+    r = onboarded_client.get("/profiles/lane/solo")
+    assert r.status_code == 200
+    assert WAITING_LANE in r.text and EMPTY_LANE not in r.text
+    # Another lane has no reviews and keeps the original words.
+    other = onboarded_client.get("/profiles/lane/two").text
+    assert EMPTY_LANE in other and WAITING_LANE not in other
+
+
+def test_a_draft_is_not_a_review_waiting_for_a_refresh(onboarded_client, db, games):
+    save_draft(db, 10, Lane.SOLO, ReviewForm(text="not done yet"), FIXED_NOW)
+    for text in (
+        onboarded_client.get("/profiles").text,
+        onboarded_client.get("/profiles/lane/solo").text,
+    ):
+        assert EMPTY_LANE in text and WAITING_LANE not in text
+
+
+def test_the_waiting_message_goes_once_the_profile_has_a_version(
+    onboarded_client, built_solo_profile
+):
+    text = onboarded_client.get("/profiles").text
+    assert WAITING_LANE not in text and text.count(EMPTY_LANE) == 3
+    assert WAITING_LANE not in onboarded_client.get("/profiles/lane/solo").text
+
+
+def test_tagged_reviews_without_a_profile_are_waiting_for_the_group(
+    onboarded_client, db, people, group_review
+):
+    crew = people[2]
+    list_text = onboarded_client.get("/profiles").text
+    assert list_text.count(WAITING_GROUP) == 1 and EMPTY_GROUP not in list_text
+    # The review also belongs to its lane, which is waiting too.
+    assert list_text.count(WAITING_LANE) == 1
+    page = onboarded_client.get(f"/profiles/group/{crew.id}").text
+    assert WAITING_GROUP in page and EMPTY_GROUP not in page
+    lane = onboarded_client.get("/profiles/lane/three_four").text
+    assert WAITING_LANE in lane
+
+
+def test_a_group_with_no_tagged_reviews_keeps_the_original_words(
+    onboarded_client, people, solo_review
+):
+    crew = people[2]
+    # A solo review is waiting, but nothing is tagged with the group.
+    page = onboarded_client.get(f"/profiles/group/{crew.id}").text
+    assert EMPTY_GROUP in page and WAITING_GROUP not in page
+    list_text = onboarded_client.get("/profiles").text
+    assert list_text.count(EMPTY_GROUP) == 1 and WAITING_GROUP not in list_text
+
+
+def test_the_group_waiting_message_goes_once_the_group_has_a_version(
+    onboarded_client, built_group_profile, people
+):
+    crew = people[2]
+    text = onboarded_client.get("/profiles").text
+    assert WAITING_GROUP not in text and EMPTY_GROUP not in text
+    assert WAITING_GROUP not in onboarded_client.get(f"/profiles/group/{crew.id}").text
 
 
 def test_pages_have_an_empty_refresh_area(onboarded_client, db, built_solo_profile):

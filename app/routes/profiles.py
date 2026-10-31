@@ -29,6 +29,7 @@ from app.services.profiles import (
     lane_key,
     list_profiles,
     profile_version,
+    targets_with_reviews,
     version_history,
 )
 from app.services.reviews import LANE_LABELS, Lane
@@ -36,10 +37,22 @@ from app.web import is_htmx, parse_id, render
 
 router = APIRouter()
 
-# What an empty profile says, by kind of profile.
+# What a profile with no version says, by kind of profile. A profile is built by the refresh,
+# not when a review is published, so a lane or group with published reviews and no version
+# yet is waiting for the next refresh, which is a different thing from having no reviews.
 EMPTY_MESSAGES = {
     "lane": "No reviews in this lane yet. Profiles fill in after you publish reviews.",
     "group": "No reviews tagged with this group yet.",
+}
+WAITING_MESSAGES = {
+    "lane": (
+        "Your reviews in this lane are waiting for the next refresh. "
+        "The profile builds then."
+    ),
+    "group": (
+        "Reviews tagged with this group are waiting for the next refresh. "
+        "The profile builds then."
+    ),
 }
 
 # The Ember badge for each tag. The badge carries the word as well, so the color is never
@@ -47,6 +60,13 @@ EMPTY_MESSAGES = {
 TAG_TONES = {"stated": "neutral", "observed": "info", "guess": "warning"}
 
 UNKNOWN_GAME = "Unknown game"
+
+
+def _no_version_message(db: Session, key: str, kind: str) -> str:
+    """What to say for the profile with this key and no version: the reviews are waiting for
+    the refresh when it has published reviews (a draft is not one), else there are none."""
+    waiting = any(target.key == key for target in targets_with_reviews(db))
+    return (WAITING_MESSAGES if waiting else EMPTY_MESSAGES)[kind]
 
 
 def _href(target: ProfileTarget) -> str:
@@ -61,14 +81,21 @@ class ProfileCard:
 
     summary: ProfileSummary
     href: str
-    empty: str  # what to say when the profile has no version yet
+    empty: str  # what to say when the profile has no version yet: no reviews, or waiting
 
 
 @router.get("/profiles")
 def profiles_page(request: Request, db: Session = Depends(get_db)):
     """A card for each of the four lanes, then for each named group by name."""
+    waiting = {target.key for target in targets_with_reviews(db)}
     cards = [
-        ProfileCard(summary, _href(summary.target), EMPTY_MESSAGES[summary.target.kind])
+        ProfileCard(
+            summary,
+            _href(summary.target),
+            (WAITING_MESSAGES if summary.target.key in waiting else EMPTY_MESSAGES)[
+                summary.target.kind
+            ],
+        )
         for summary in list_profiles(db)
     ]
     return render(request, "profiles.html", nav="profiles", cards=cards)
@@ -170,6 +197,8 @@ def _profile_page(
         version_row = profile_version(db, profile, wanted)
         shown = _shown(db, version_row) if version_row is not None else None
 
+    # Only a page with no version needs to know whether reviews are waiting for the refresh.
+    empty = _no_version_message(db, key, kind) if shown is None else ""
     fragment = (
         is_htmx(request) and request.headers.get("hx-history-restore-request") != "true"
     )
@@ -179,7 +208,7 @@ def _profile_page(
         nav="profiles",
         label=label,
         base_url=base_url,
-        empty=EMPTY_MESSAGES[kind],
+        empty=empty,
         history=history,
         shown=shown,
         questions_label=SECTION_LABELS["open_questions"],
