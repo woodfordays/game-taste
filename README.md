@@ -6,6 +6,8 @@ Game Taste turns your reviews of the games you play into a picture of what works
 
 Setup, the Library, reviews written by lane (with drafts and a history of every version), taste profiles, the daily refresh that keeps them current, and Settings. Recommendations arrive in a later update. The tour in setup and the Settings page already describe profiles and recommendations.
 
+Home shows your numbers: how many games you've reviewed, your play time, your average rating and your most played game. Only published reviews count, not drafts. Play time is Steam's own count for the games you own, so a game left running counts too.
+
 ## Quick start
 
 You need [Docker](https://docs.docker.com/get-started/get-docker/) with Compose. Docker Desktop on Windows and macOS includes both.
@@ -35,7 +37,7 @@ Inside the container, `localhost` means the container itself, not your computer.
 
 A taste profile is a short read on what works for one set of players: what they loved, what rules a game out, the patterns across their reviews, and hunches still to test. There is one for each lane (Solo, Two players, Three to four, Five or more) and one for each named group. Profiles are built from your published reviews, not drafts. Profiles lists every lane and every named group. A profile fills in at the first refresh after its lane or group has a published review. Until then its page says there are no reviews yet, or that they're waiting for the next refresh.
 
-The refresh keeps the profiles current. It runs every day at the Refresh time under Schedule in Settings, in the timezone set there, and whenever you select "Refresh now" on Settings or Profiles. If Steam is connected, the refresh syncs your library first. If the app was off at the set time, the refresh runs when the app starts again.
+The refresh keeps the profiles current. It runs every day at the Refresh time under Schedule in Settings, in the timezone set there, and whenever you select "Refresh now" on Settings or Profiles. If Steam is connected, the refresh syncs your library first. If the app was off at the set time, the refresh runs when the app starts again. While it runs, Settings and Profiles show what it is doing and which profile it is on.
 
 For each profile with new reviews, the refresh asks the Everyday tasks model to update the profile, with one request for every 20 new reviews, rounded up. A reply the app can't read is asked for once more, so a batch of reviews can take two requests. Editing a review and publishing it again counts as a new review. A review tagged with a named group counts for both its lane's profile and the group's, so it is sent for each. The cost depends on the provider you chose. Each request carries the instructions, the current profile and up to 20 reviews, so give a local model a context of at least 16,000 tokens, because many local servers default to less. Each update is saved as a new version. If an update fails its checks, the profile keeps its last version, the refresh status says why, and those reviews are sent again at the next refresh.
 

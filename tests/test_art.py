@@ -9,6 +9,8 @@ from conftest import FIXED_NOW
 CSS = (Path(__file__).parent.parent / "app" / "static" / "app.css").read_text(
     encoding="utf-8"
 )
+# Compared with the raw HTML on purpose, not through html.unescape: the handler is literal
+# template text, which Jinja never escapes, so its quotes reach the page as they are written.
 HANDLER = "this.parentNode.classList.add('is-missing'); this.remove()"
 
 

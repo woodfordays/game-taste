@@ -240,14 +240,18 @@
   gap: var(--space-4);
 }
 
-/* A note with a moving bar while a slow request is out (partials/progress.html). htmx adds
-   .htmx-request to the form it sits in, or to the note itself when a trigger names it in
-   hx-indicator, and that reveals it. Beside a button it takes the rest of the row. */
+/* A note with a moving bar while a slow request is out (partials/progress.html). It shows
+   while htmx has .htmx-request on the note itself (a trigger names it in hx-indicator) or on an
+   element around it, such as the form that sent the request. Beside a button it takes the rest
+   of the row; in a column it is as tall as its bar. */
 .busy-note {
   display: none;
-  flex: 1 1 14rem;
   min-width: 12rem;
   max-width: 28rem;
+}
+
+:is(.ai-actions, .settings-actions, .library-head__actions) > .busy-note {
+  flex: 1 1 14rem;
 }
 
 .htmx-request .busy-note,

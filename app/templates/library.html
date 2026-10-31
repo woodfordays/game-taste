@@ -11,7 +11,7 @@
   <h1 class="text-headline">Library</h1>
   {% if connected %}
   <div class="library-head__actions">
-    {{ busy_note("Syncing your library...", id="library-syncing") }}
+    {{ busy_note("library-syncing", "Syncing your library...") }}
     <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"
       hx-post="/library/sync" hx-include="#library-filters" hx-target="#library-list" hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator="#library-syncing">
       <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3L19.5 9"/><path d="M19.5 4.5V9H15"/></svg>
@@ -46,7 +46,7 @@
         {{ field("store-term", "term", "Game name", autocomplete="off", hint="Part of the name is enough.") }}
         <button type="submit" class="em-btn em-btn--primary em-btn--md text-label"><span class="em-btn__label">Search Steam</span></button>
       </form>
-      {{ busy_note("Searching the Steam store...", id="store-searching") }}
+      {{ busy_note("store-searching", "Searching the Steam store...") }}
       <div id="store-results" class="store-results" aria-live="polite"></div>
     </div>
   </div>
