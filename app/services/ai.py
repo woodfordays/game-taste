@@ -536,9 +536,12 @@ def complete_json(
                 timeout=JOB_CALL_TIMEOUT_SECONDS,
             )
         except AIError as err:
+            # The provider's own text may end in a period, and the cut may land on one.
+            detail = str(err)[:_CALL_FAILED_CHARS].rstrip(". \t\r\n")
             raise StructuredReplyError(
                 "call_failed",
-                f"The model didn't answer: {str(err)[:_CALL_FAILED_CHARS]}",
+                f"The model didn't answer: {detail}. "
+                f"Check the {JOB_LABELS[job]} provider in Settings, then try again.",
             ) from err
         if completion.stop_reason == "length":
             raise StructuredReplyError(

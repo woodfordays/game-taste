@@ -410,7 +410,10 @@ def test_a_model_that_cant_be_reached_fails_the_profile(
     fake_ai.fail("sample-local", ConnectionError("no route"))
     run = refresh(app, db)
     assert run.details[0]["outcome"] == "failed"
-    assert run.details[0]["message"].startswith("The model didn't answer:")
+    assert run.details[0]["message"] == (
+        "The model didn't answer: ConnectionError: no route. "
+        "Check the Everyday tasks provider in Settings, then try again."
+    )
     assert db.get(Job, run.job_id).status == "done"
 
 

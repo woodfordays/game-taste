@@ -437,7 +437,10 @@ def test_a_failed_call_is_call_failed_with_the_error_cut_to_200_characters(
         ask(db, app, services)
     expected = ("RuntimeError: boom " + "x" * 500)[:200]
     assert err.value.reason == "call_failed"
-    assert err.value.message == f"The model didn't answer: {expected}"
+    assert err.value.message == (
+        f"The model didn't answer: {expected}. "
+        "Check the Everyday tasks provider in Settings, then try again."
+    )
     assert isinstance(err.value, AIError)
     [row] = logged_calls(db)
     assert (
@@ -463,8 +466,55 @@ def test_a_failed_call_on_the_retry_is_call_failed_and_both_are_logged(
         ask(db, app, services)
     first, second = logged_calls(db)
     assert err.value.reason == "call_failed"
-    assert err.value.message == "The model didn't answer: ConnectionError: down"
+    assert err.value.message == (
+        "The model didn't answer: ConnectionError: down. "
+        "Check the Everyday tasks provider in Settings, then try again."
+    )
     assert first.error is None and second.error == "ConnectionError: down"
+
+
+@pytest.mark.parametrize(
+    "error,shown",
+    [
+        ("model not found.", "RuntimeError: model not found"),
+        ("model not found. ", "RuntimeError: model not found"),
+        ("it ended...  \n", "RuntimeError: it ended"),
+        ("a" * 184 + ". tail", "RuntimeError: " + "a" * 184),  # the cut lands after ". "
+        ("kept. inside", "RuntimeError: kept. inside"),
+    ],
+)
+def test_the_failure_message_never_reads_with_two_periods(
+    db, app, services, fake_ai, saved_ai_setup, error, shown
+):
+    fake_ai.fail("sample-local", RuntimeError(error))
+    with pytest.raises(StructuredReplyError) as err:
+        ask(db, app, services)
+    assert err.value.message == (
+        f"The model didn't answer: {shown}. "
+        "Check the Everyday tasks provider in Settings, then try again."
+    )
+    assert ".." not in err.value.message
+
+
+def test_the_failure_message_names_the_provider_of_the_job_that_failed(
+    db, app, services, fake_ai, saved_ai_setup
+):
+    fake_ai.fail("sample-local", ConnectionError("down"))
+    with pytest.raises(StructuredReplyError) as err:
+        complete_json(
+            db,
+            app.state.vault,
+            Job.JUDGE,
+            PROMPT,
+            {},
+            Answer,
+            services=services,
+            run_ref=None,
+            now=FIXED_NOW,
+        )
+    assert err.value.message.endswith(
+        "Check the Review judge provider in Settings, then try again."
+    )
 
 
 def test_every_job_call_is_bounded_and_keeps_the_sdk_retries(
