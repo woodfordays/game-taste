@@ -55,6 +55,33 @@ def known_timezones() -> frozenset[str]:
     return frozenset(zoneinfo.available_timezones())
 
 
+# --- login sessions -----------------------------------------------------------
+
+SESSION_EPOCH_SETTING = "session_epoch"
+FIRST_SESSION_EPOCH = "1"
+
+
+def get_session_epoch(db: Session) -> str:
+    """The number every login session must carry to count as logged in.
+
+    A whole number as text, "1" until it is first bumped. A stored value that isn't a
+    whole number counts as "1", so a damaged setting can't lock everyone out for good.
+    """
+    stored = get_setting(db, SESSION_EPOCH_SETTING)
+    try:
+        return str(int(stored)) if stored else FIRST_SESSION_EPOCH
+    except ValueError:
+        return FIRST_SESSION_EPOCH
+
+
+def bump_session_epoch(db: Session) -> str:
+    """End every login session at once: from now on only a session stamped with the
+    returned number counts as logged in. Used when the password changes or is reset."""
+    epoch = str(int(get_session_epoch(db)) + 1)
+    set_setting(db, SESSION_EPOCH_SETTING, epoch)
+    return epoch
+
+
 # --- the values Settings lets the user change ---------------------------------
 
 STORE_REGION_SETTING = "store_region"

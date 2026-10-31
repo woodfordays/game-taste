@@ -24,7 +24,7 @@ from app.services.secrets import (
     load_or_create_key,
     load_or_create_session_secret,
 )
-from app.services.settings import delete_setting
+from app.services.settings import bump_session_epoch, delete_setting
 from app.web import STATIC_DIR
 
 
@@ -60,8 +60,10 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
 
     if paths.reset_flag_path.exists():
         # Forgot the password: drop it, keep everything else, and ask for a new one.
+        # Every session ends too, so a cookie from before can't walk back in afterwards.
         with app.state.session_factory() as db:
             delete_setting(db, "password_hash")
+            bump_session_epoch(db)
         paths.reset_flag_path.unlink(missing_ok=True)
 
     install_auth(app)

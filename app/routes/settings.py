@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
+from app.auth import sign_in
 from app.db import get_db
 from app.models import NamedGroup, Person
 from app.routes.onboarding import ai_provider_row
@@ -47,6 +48,7 @@ from app.services.settings import (
     REFRESH_TIME_SETTING,
     STORE_REGION_SETTING,
     TIMEZONE_SETTING,
+    bump_session_epoch,
     get_setting,
     known_timezones,
     parse_refresh_time,
@@ -543,6 +545,9 @@ def password_submit(
     if errors:
         return _respond(request, db, "password", **errors)
 
-    # The session stays as it is, so this device stays logged in.
+    # Every session ends with the old password, and this one is stamped again so this
+    # device stays logged in.
     set_setting(db, "password_hash", hash_password(new))
+    bump_session_epoch(db)
+    sign_in(request, db)
     return _respond(request, db, "password", saved=True)

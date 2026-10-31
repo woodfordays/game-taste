@@ -1,10 +1,21 @@
+import json
+from base64 import b64encode
+
 import pytest
 from fastapi.testclient import TestClient
+from itsdangerous import TimestampSigner
 
 from app.auth import ONBOARDING_STEPS, advance_step, current_step
 from app.main import create_app
 from app.services.secrets import hash_password, verify_password
-from app.services.settings import get_secret, get_setting, set_secret, set_setting
+from app.services.settings import (
+    bump_session_epoch,
+    get_secret,
+    get_session_epoch,
+    get_setting,
+    set_secret,
+    set_setting,
+)
 
 
 def set_password(db, password="sample-password"):
@@ -533,3 +544,111 @@ def test_the_guard_closes_its_database_session(logged_in_client, app):
     logged_in_client.get("/library", follow_redirects=False)
     TestClient(app).get("/library", follow_redirects=False)
     assert app.state.engine.pool.checkedout() == 0
+
+
+# --- sessions end with the password ------------------------------------------
+
+
+def sign_in_to(app, password="sample-password"):
+    """A new client logged in with `password`."""
+    client = TestClient(app)
+    r = client.post("/login", data={"password": password}, follow_redirects=False)
+    assert r.status_code == 303
+    return client
+
+
+def test_the_session_cookie_is_named_for_the_app(logged_in_client, app):
+    assert "game_taste_session" in logged_in_client.cookies
+    assert "session" not in logged_in_client.cookies
+    r = TestClient(app).post(
+        "/login", data={"password": "sample-password"}, follow_redirects=False
+    )
+    assert r.headers["set-cookie"].startswith("game_taste_session=")
+
+
+def test_session_epoch_starts_at_one_and_counts_up(db):
+    assert get_session_epoch(db) == "1"
+    assert get_setting(db, "session_epoch") is None  # reading doesn't write
+    assert bump_session_epoch(db) == "2"
+    assert get_session_epoch(db) == "2" and get_setting(db, "session_epoch") == "2"
+    assert bump_session_epoch(db) == "3"
+
+
+def test_a_damaged_session_epoch_counts_as_the_first(db):
+    for damaged in ("", "abc", "1.5"):
+        set_setting(db, "session_epoch", damaged)
+        assert get_session_epoch(db) == "1"
+        assert bump_session_epoch(db) == "2"
+
+
+def test_login_stamps_the_current_epoch(logged_in_client, app, db):
+    advance_step(db, "done")
+    bump_session_epoch(db)
+    r = logged_in_client.get("/", follow_redirects=False)
+    assert r.headers["location"] == "/login"  # stamped before the bump
+    assert sign_in_to(app).get("/", follow_redirects=False).status_code == 200
+
+
+def test_first_run_password_stamps_the_epoch(client, db):
+    client.post(
+        "/onboarding/password",
+        data={
+            "password": "sample-password",
+            "confirm": "sample-password",
+            "timezone": "UTC",
+        },
+    )
+    assert client.get("/onboarding/ai", follow_redirects=False).status_code == 200
+    bump_session_epoch(db)
+    r = client.get("/onboarding/ai", follow_redirects=False)
+    assert r.headers["location"] == "/login"
+
+
+def test_a_session_without_an_epoch_is_logged_out(onboarded_client, app):
+    # What an older version of the app left in the cookie: logged in, no epoch.
+    signer = TimestampSigner(str(app.state.session_secret))
+    data = b64encode(json.dumps({"user": True}).encode("utf-8"))
+    old = TestClient(app, cookies={"game_taste_session": signer.sign(data).decode()})
+    assert old.get("/", follow_redirects=False).headers["location"] == "/login"
+    r = old.get("/", headers={"HX-Request": "true"}, follow_redirects=False)
+    assert r.headers["HX-Redirect"] == "/login"
+    # The same cookie with the current epoch is fine.
+    data = b64encode(json.dumps({"user": True, "epoch": "1"}).encode("utf-8"))
+    good = TestClient(app, cookies={"game_taste_session": signer.sign(data).decode()})
+    assert good.get("/", follow_redirects=False).status_code == 200
+
+
+def test_an_old_cookie_does_not_work_after_a_reset(tmp_path, services):
+    first = create_app(tmp_path, services=services)
+    with first.state.session_factory() as s:
+        set_password(s)
+        advance_step(s, "done")
+    old = sign_in_to(first)
+    assert old.get("/", follow_redirects=False).status_code == 200
+
+    (tmp_path / "reset-password").touch()
+    second = create_app(tmp_path, services=services)
+    fresh = TestClient(second)
+    r = fresh.post(
+        "/onboarding/password",
+        data={"password": "new-password", "confirm": "new-password", "timezone": "UTC"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    # The new password is set, yet the cookie from before the reset stays out...
+    stale = TestClient(second, cookies=old.cookies)
+    assert stale.get("/", follow_redirects=False).headers["location"] == "/login"
+    # ...and the browser that set the new password is in.
+    assert fresh.get("/", follow_redirects=False).status_code == 200
+
+
+def test_a_reset_ends_sessions_even_with_the_same_password(tmp_path, services):
+    first = create_app(tmp_path, services=services)
+    with first.state.session_factory() as s:
+        set_password(s)
+        advance_step(s, "done")
+        before = get_session_epoch(s)
+    (tmp_path / "reset-password").touch()
+    second = create_app(tmp_path, services=services)
+    with second.state.session_factory() as s:
+        assert int(get_session_epoch(s)) > int(before)

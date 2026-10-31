@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from markupsafe import Markup
 from sqlalchemy.orm import Session
 
-from app.auth import PASSWORD_PATH, advance_step
+from app.auth import PASSWORD_PATH, advance_step, sign_in
 from app.db import get_db
 from app.services.secrets import hash_password, new_password_problem, verify_password
 from app.services.settings import get_setting, known_timezones, set_setting
@@ -57,7 +57,7 @@ def password_submit(
     set_setting(db, "timezone", timezone)
     advance_step(db, "ai")
     set_setting(db, "password_hash", hash_password(password))
-    request.session["user"] = True
+    sign_in(request, db)
     return redirect(request, "/onboarding/ai")
 
 
@@ -80,7 +80,7 @@ def login_submit(
             status_code=401,
             error=WRONG_PASSWORD,
         )
-    request.session["user"] = True
+    sign_in(request, db)
     return redirect(request, "/")
 
 

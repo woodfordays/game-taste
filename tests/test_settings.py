@@ -1531,3 +1531,44 @@ def test_settings_stays_reachable_after_every_section_is_used(onboarded_client):
         assert r.status_code == 200 and "<h1" in r.text and "Settings" in r.text, path
         for title in ["settings-ai-title", "settings-account-title"]:
             assert f'id="{title}"' in r.text, (path, title)
+
+
+def test_changing_the_password_logs_out_every_other_session(
+    onboarded_client, db, app
+):
+    other = TestClient(app)
+    other.post("/login", data={"password": "sample-password"})
+    assert other.get("/settings", follow_redirects=False).status_code == 200
+
+    assert "Password changed." in change(onboarded_client)
+
+    # The other browser is sent to log in, as a page and as an htmx request...
+    r = other.get("/settings", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login"
+    r = other.get(
+        "/settings", headers={"HX-Request": "true"}, follow_redirects=False
+    )
+    assert r.headers["HX-Redirect"] == "/login"
+    # ...while the one that changed it stays logged in, again and again.
+    assert onboarded_client.get("/settings", follow_redirects=False).status_code == 200
+    assert "Password changed." in change(
+        onboarded_client, current="another-pass", new="third-pass"
+    )
+    assert onboarded_client.get("/settings", follow_redirects=False).status_code == 200
+    # The other browser can log in again with the new password.
+    assert (
+        other.post(
+            "/login", data={"password": "third-pass"}, follow_redirects=False
+        ).status_code
+        == 303
+    )
+    assert other.get("/settings", follow_redirects=False).status_code == 200
+
+
+def test_a_refused_password_change_keeps_every_session(onboarded_client, db, app):
+    other = TestClient(app)
+    other.post("/login", data={"password": "sample-password"})
+    change(onboarded_client, current="wrong-pass")
+    change(onboarded_client, new="short")
+    assert get_setting(db, "session_epoch") is None
+    assert other.get("/settings", follow_redirects=False).status_code == 200

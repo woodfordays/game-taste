@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.services.settings import get_setting, set_setting
+from app.services.settings import get_session_epoch, get_setting, set_setting
 from app.web import redirect
 
 # The steps after the password, in the order the user walks through them. "done" means
@@ -17,6 +17,9 @@ ONBOARDING_STEPS = ["ai", "steam", "people", "tour", "done"]
 PASSWORD_STEP = "password"
 PASSWORD_PATH = "/onboarding/password"
 SESSION_MAX_AGE = int(timedelta(days=30).total_seconds())
+# Named for the app so it doesn't collide with another app's "session" cookie on the same
+# host (a different port shares cookies).
+SESSION_COOKIE = "game_taste_session"
 
 
 def _rank(step: str) -> int:
@@ -45,6 +48,22 @@ def advance_step(db: Session, to: str) -> None:
     saved = get_setting(db, "onboarding_step")
     if saved not in ONBOARDING_STEPS or _rank(to) > _rank(saved):
         set_setting(db, "onboarding_step", to)
+
+
+def sign_in(request: Request, db: Session) -> None:
+    """Mark the request's session as logged in, stamped with the current session epoch.
+
+    The epoch is what lets a password change or reset end every other session: the guard
+    treats a session carrying an older epoch as logged out.
+    """
+    request.session["user"] = True
+    request.session["epoch"] = get_session_epoch(db)
+
+
+def is_signed_in(request: Request, db: Session) -> bool:
+    """Whether the request's session is logged in and carries the current epoch."""
+    session = request.session
+    return session.get("user") is True and session.get("epoch") == get_session_epoch(db)
 
 
 def step_url(step: str) -> str:
@@ -107,9 +126,8 @@ async def guard(request: Request, call_next):
         return await call_next(request)
     with request.app.state.session_factory() as db:
         step = current_step(db)
-    target = redirect_target(
-        path, logged_in=request.session.get("user") is True, step=step
-    )
+        logged_in = is_signed_in(request, db)
+    target = redirect_target(path, logged_in=logged_in, step=step)
     if target is None:
         return await call_next(request)
     return redirect(request, target)
@@ -125,6 +143,7 @@ def install_auth(app: FastAPI) -> None:
     app.add_middleware(
         SessionMiddleware,
         secret_key=app.state.session_secret,
+        session_cookie=SESSION_COOKIE,
         same_site="lax",
         max_age=SESSION_MAX_AGE,
     )
