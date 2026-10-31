@@ -39,6 +39,10 @@ from app.services.settings import set_setting
 
 REPO = Path(__file__).parent.parent
 MISSING_SETUP = "Set up the Everyday tasks model in Settings, then refresh again."
+UNUSABLE = (
+    "The model's reply wasn't in the expected format. "
+    "Try again, or pick a different Everyday tasks model in Settings."
+)
 
 
 def refresh(app, db):
@@ -166,10 +170,36 @@ def test_unusable_reply_fails_profile_not_worker(  # Review focus 1
     fake_ai.replies["sample-local"] = "I can't do JSON today."
     run = refresh(app, db)
     assert run.details[0]["outcome"] == "failed"
-    assert (
-        run.details[0]["message"] == "The model's reply wasn't in the expected format."
-    )
+    assert run.details[0]["message"] == UNUSABLE
     assert db.get(Job, run.job_id).status == "done"
+
+
+REPLY_WRAPPERS = {
+    # A reasoning model's thinking drafts the profile's shape before the real reply.
+    "think block with a draft": (
+        '<think>The reply is {"profile": {"loved": [...]}, "changelog": "..."}.</think>\n'
+        "{reply}"
+    ),
+    # A server strips the opening tag, so braces from the reasoning come first.
+    "closing tag only": (
+        'I need a {"profile": ...} object with {loved} lines.\n</think>\n{reply}'
+    ),
+    "chatter with braces after": "{reply}\n\nWant me to change {anything}?",
+    "chatter with braces before": "Here is {the profile}:\n{reply}",
+}
+
+
+@pytest.mark.parametrize("wrapper", REPLY_WRAPPERS.values(), ids=REPLY_WRAPPERS.keys())
+def test_a_reply_wrapped_in_reasoning_or_chatter_builds_the_profile(
+    app, db, games, saved_ai_setup, fake_ai, wrapper
+):
+    v = publish(db, 10, Lane.SOLO, ReviewForm(rating=8, text="ok"), FIXED_NOW)
+    reply = profile_reply(loved=[loved(v.id)])
+    fake_ai.replies["sample-local"] = wrapper.replace("{reply}", reply)
+    run = refresh(app, db)
+    assert (run.profiles_updated, run.profiles_failed) == (1, 0)
+    assert len(fake_ai.calls) == 1  # read the first time, with no retry
+    assert db.scalar(select(func.count()).select_from(ProfileVersion)) == 1
 
 
 def test_not_configured_stops_refresh_with_message(app, db, games):
@@ -429,7 +459,7 @@ def test_a_failed_second_batch_keeps_the_first_version_and_resumes(
             "label": "Solo",
             "outcome": "failed",
             "versions": [1],
-            "message": "The model's reply wasn't in the expected format.",
+            "message": UNUSABLE,
         }
     ]
     assert (run.profiles_updated, run.profiles_failed) == (1, 1)

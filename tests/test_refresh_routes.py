@@ -126,9 +126,10 @@ def test_failed_profiles_are_explained(
     onboarded_client.post("/refresh")
     run_pending_jobs(app)
     text = html.unescape(onboarded_client.get("/refresh/status").text)
+    assert "1 couldn't be updated." in text
     assert (
-        "1 couldn't be updated." in text
-        and "The model's reply wasn't in the expected format." in text
+        "The model's reply wasn't in the expected format. "
+        "Try again, or pick a different Everyday tasks model in Settings." in text
     )
 
 

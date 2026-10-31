@@ -114,6 +114,27 @@ def test_a_missing_prompt_file_is_an_error(tmp_path, monkeypatch):
         '```\n{"value": 3}\n```',
         'Here is the {format} you wanted:\n```json\n{"value": 3}\n```\nAnything else?',
         '  \n{"value": 3}\n\n',
+        # A reasoning model's thinking sits in the reply, and it drafts the shape first.
+        '<think>The reply should look like {"value": "?"}. Let me work it out.</think>\n'
+        '{"value": 3}',
+        '<think>Maybe {"value": 1}? No, the answer is 3.</think>{"value": 3}',
+        '<thinking>I will write {"value": N}</thinking>\n```json\n{"value": 3}\n```',
+        # A server that strips the opening tag leaves the rest of the reasoning in the reply.
+        'Let me think. The shape is {"value": N}, so N must be an integer.\n</think>\n'
+        '{"value": 3}',
+        'Hmm, {braces} everywhere.\n</THINK>\n\n{"value": 3}',
+        '<think>first {thought}</think> then <think>a {second}</think>{"value": 3}',
+        # Chatter around the object that has braces of its own.
+        '{"value": 3}\n\nLet me know if you want {more} changes.',
+        '{"value": 3} } stray',
+        'Here is {the answer}:\n{"value": 3}',
+        'Here is {the answer}:\n{"value": 3}\nAnd here is {another} thought.',
+        # A fenced example that isn't the answer, then the answer.
+        '```\n{format}\n```\nSo:\n{"value": 3}',
+        # Objects of the wrong shape before the right one.
+        'For example {"value": "x"} is wrong, but {"value": 3} is right.',
+        # Braces inside the object's own strings.
+        '{"value": 3, "note": "a } and a { inside"} done',
     ],
 )
 def test_complete_json_tolerates_wrapping(
@@ -138,6 +159,45 @@ def test_complete_json_tolerates_wrapping(
         and row.prompt_version == PROMPT.version
         and row.run_ref == "test:1"
     )
+    assert len(fake_ai.calls) == 1  # read the first time, with no retry
+
+
+def test_a_reasoning_block_is_dropped_whatever_it_drafted(
+    db, app, services, fake_ai, saved_ai_setup
+):
+    # The reasoning holds a complete, valid object. Only what follows it is the answer.
+    fake_ai.replies["sample-local"] = (
+        '<think>Draft: {"value": 1}. No, better: {"value": 2}.</think>{"value": 3}'
+    )
+    answer, _ = ask(db, app, services)
+    assert answer.value == 3 and len(fake_ai.calls) == 1
+
+
+def test_a_reply_that_is_all_reasoning_is_not_read_as_the_answer(
+    db, app, services, fake_ai, saved_ai_setup
+):
+    # Nothing follows the closing tag, so there is no answer, whatever the reasoning drafted.
+    fake_ai.replies["sample-local"] = '<think>It is {"value": 3}</think>'
+    with pytest.raises(StructuredReplyError) as err:
+        ask(db, app, services)
+    assert err.value.reason == "unusable" and len(fake_ai.calls) == 2
+
+
+def test_the_first_object_that_fits_is_the_answer(
+    db, app, services, fake_ai, saved_ai_setup
+):
+    fake_ai.replies["sample-local"] = '{"value": 4} then {"value": 5}'
+    answer, _ = ask(db, app, services)
+    assert answer.value == 4
+
+
+def test_a_deeply_nested_reply_is_unusable_not_a_crash(
+    db, app, services, fake_ai, saved_ai_setup
+):
+    fake_ai.replies["sample-local"] = '{"a":' * 3000
+    with pytest.raises(StructuredReplyError) as err:
+        ask(db, app, services)
+    assert err.value.reason == "unusable"
 
 
 def test_complete_json_returns_the_model_and_the_id_of_the_call_that_made_it(
@@ -182,6 +242,11 @@ def test_complete_json_retries_once_then_gives_up(
         )
     assert err.value.reason == "unusable" and len(fake_ai.calls) == 2
     assert "Your previous reply could not be used" in fake_ai.calls[1][2]
+    # It says what happened, then what to do, and names the job whose model to change.
+    assert err.value.message == (
+        "The model's reply wasn't in the expected format. "
+        "Try again, or pick a different Everyday tasks model in Settings."
+    )
 
 
 def test_the_retry_repeats_the_prompt_and_says_what_was_wrong(
@@ -198,6 +263,7 @@ def test_the_retry_repeats_the_prompt_and_says_what_was_wrong(
     assert second.endswith(". Reply again with only the JSON object.")
     # The reply wasn't JSON at all, so the error says so; it isn't the validation error.
     assert "validation error" not in second
+    assert "the reply has no JSON object in it" in second
 
 
 def test_the_retry_names_the_validation_error_when_the_json_is_the_wrong_shape(
@@ -207,6 +273,27 @@ def test_the_retry_names_the_validation_error_when_the_json_is_the_wrong_shape(
     answer, _ = ask(db, app, services)
     assert answer.value == 3
     assert "validation error" in fake_ai.calls[1][2]
+
+
+def test_the_retry_prefers_a_validation_error_to_a_decode_error(
+    db, app, services, fake_ai, saved_ai_setup
+):
+    # The first brace isn't JSON at all. The second is JSON of the wrong shape, which is
+    # the more useful thing to tell the model.
+    fake_ai.replies["sample-local"] = ['Not {JSON} but {"value": "x"}', '{"value": 3}']
+    answer, _ = ask(db, app, services)
+    assert answer.value == 3
+    retry = fake_ai.calls[1][2]
+    assert "validation error" in retry and "Expecting" not in retry
+
+
+def test_the_retry_names_a_decode_error_when_no_object_was_valid_json(
+    db, app, services, fake_ai, saved_ai_setup
+):
+    fake_ai.replies["sample-local"] = ["Not {JSON} at all", '{"value": 3}']
+    ask(db, app, services)
+    retry = fake_ai.calls[1][2]
+    assert "Expecting" in retry and "validation error" not in retry
 
 
 def test_the_error_in_the_retry_is_cut_to_300_characters(

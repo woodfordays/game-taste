@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from app.models import AiCall
@@ -439,6 +439,7 @@ class StructuredReplyError(AIError):
 _CALL_FAILED_CHARS = 200
 _RETRY_NOTE_CHARS = 300
 _FENCED = re.compile(r"```[^\n`]*\n?(.*?)```", re.DOTALL)
+_REASONING_END = re.compile(r"</think(?:ing)?>", re.IGNORECASE)
 
 _Model = TypeVar("_Model", bound=BaseModel)
 
@@ -446,23 +447,40 @@ _Model = TypeVar("_Model", bound=BaseModel)
 def _parse_reply(reply: str, schema: type[_Model]) -> _Model:
     """Read a model's reply as a `schema`. Raises ValueError (or a pydantic one) if it isn't.
 
-    Tolerates a code fence around the JSON and chatter before or after it: the JSON is the
-    text from the first "{" to the last "}", inside the first fence that holds one if there
-    is a fence. The text is only ever parsed as JSON, never run.
+    Tolerates what real models put around the JSON:
+    - Reasoning text. If the reply has a closing </think> or </thinking> tag, only the text
+      after the last one is read. That drops a closed block, and also the reasoning a server
+      leaves behind when it strips the opening tag.
+    - A code fence, and chatter before or after the JSON, including chatter with braces.
+      The first fence that holds a "{" is read first, then the whole reply. In each, an
+      object is tried at every "{" in turn, and the first that fits `schema` is the answer.
+
+    The error raised is the first object that decoded but didn't fit `schema`, if there was
+    one, since that is the most useful thing to tell the model. Otherwise it is the first
+    decode error, or "no JSON object" for a reply with no "{". The text is only ever
+    parsed as JSON, never run.
     """
+    ends = list(_REASONING_END.finditer(reply))
+    if ends:
+        reply = reply[ends[-1].end() :]
     areas = [block for block in _FENCED.findall(reply) if "{" in block][:1]
     areas.append(reply)
-    first_error: Exception | None = None
+    decoder = json.JSONDecoder()
+    misfit: ValidationError | None = None  # decoded, but not a `schema`
+    unreadable: Exception | None = None  # not JSON
     for area in areas:
-        start, end = area.find("{"), area.rfind("}")
-        try:
-            if start == -1 or end < start:
-                raise ValueError("the reply has no JSON object in it")
-            return schema.model_validate(json.loads(area[start : end + 1]))
-        # json.JSONDecodeError and pydantic's ValidationError are both ValueErrors.
-        except (ValueError, RecursionError) as exc:
-            first_error = first_error or exc
-    raise first_error
+        start = area.find("{")
+        while start != -1:
+            try:
+                value, _end = decoder.raw_decode(area, start)
+                return schema.model_validate(value)
+            except ValidationError as exc:
+                misfit = misfit or exc
+            # json.JSONDecodeError is a ValueError. A very deep object is a RecursionError.
+            except (ValueError, RecursionError) as exc:
+                unreadable = unreadable or exc
+            start = area.find("{", start + 1)
+    raise misfit or unreadable or ValueError("the reply has no JSON object in it")
 
 
 def complete_json(
@@ -533,5 +551,7 @@ def complete_json(
         except (ValueError, RecursionError) as exc:
             problem = str(exc)[:_RETRY_NOTE_CHARS]
     raise StructuredReplyError(
-        "unusable", "The model's reply wasn't in the expected format."
+        "unusable",
+        "The model's reply wasn't in the expected format. "
+        f"Try again, or pick a different {JOB_LABELS[job]} model in Settings.",
     )
