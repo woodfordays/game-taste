@@ -930,7 +930,8 @@
 }
 
 /* A lane's history: one card for each published version, newest first. */
-.history-back {
+.history-back,
+.profile-back {
   display: inline-block;
   margin-bottom: var(--space-4);
 }
@@ -1115,4 +1116,157 @@
   gap: var(--space-6);
   max-width: 480px;
   padding: var(--space-2) 0 var(--space-5);
+}
+
+/* Profiles. The list is a card for each lane and group; a profile page is a title, the version
+   on screen, its sections of tagged lines, and the changelog. */
+.profiles-head,
+.profile-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.profiles-head > h1,
+.profile-head > h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The refresh status area takes no room until something is put in it. */
+.refresh-area:empty {
+  display: none;
+}
+
+.profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.profile-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+}
+
+.profile-card__main {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.profile-card__title,
+.profile-card__meta {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-card__meta {
+  color: var(--ink-muted);
+}
+
+.profile-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.profile-meta,
+.profile-nothing {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.profile-version {
+  max-width: 320px;
+}
+
+.profile-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.profile-section > h2,
+.profile-changelog > h2 {
+  margin: 0;
+}
+
+/* Lines are separated by hairlines rather than boxed. */
+.profile-lines,
+.profile-changelog__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.profile-line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.profile-line__main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/* The badges share a width so the lines' text starts in one column, and a badge stays its size
+   beside text that wraps, level with the first row of it. */
+.profile-line__main .em-badge {
+  flex: none;
+  justify-content: center;
+  min-width: 68px;
+  margin-top: 2px;
+}
+
+.profile-line__text,
+.profile-line__from {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-line__from {
+  color: var(--ink-muted);
+}
+
+.profile-questions {
+  margin: 0;
+  padding-left: var(--space-5);
+  overflow-wrap: anywhere;
+}
+
+.profile-changelog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
+}
+
+.profile-changelog__item {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
 }

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{#- The Profiles page: a card for each lane, then for each named group. Context: `cards` (ProfileCard: `summary` with the target, the
+    newest version and the version count, `href` to the profile and `empty`, what to say while there is no version). A card with a
+    version says which and when, and links to the profile; the link's name is the same on every card, so it is described by the card's
+    title for a screen reader. -#}
+{% block title %}Profiles - Game Taste{% endblock %}
+{% block content %}
+<div class="profiles-head">
+  <h1 class="text-headline">Profiles</h1>
+  {#- The refresh status area. Empty for now: Refresh now and the status of a running refresh are put inside it. -#}
+  <div id="refresh-area" class="refresh-area"></div>
+</div>
+
+<ul class="profile-list">
+  {%- for card in cards %}
+  {%- set latest = card.summary.latest %}
+  <li class="em-card">
+    <div class="em-card__body profile-card">
+      <div class="profile-card__main">
+        <h2 id="profile-card-{{ loop.index }}" class="profile-card__title text-subtitle">{{ card.summary.target.label }}</h2>
+        {%- if latest %}
+        <p class="profile-card__meta text-body">Version {{ latest.version }} · updated {{ latest.created_at | when }}</p>
+        {%- else %}
+        <p class="profile-card__meta text-body">{{ card.empty }}</p>
+        {%- endif %}
+      </div>
+      {%- if latest %}
+      <a class="em-btn em-btn--secondary em-btn--md text-label" href="{{ card.href }}" aria-describedby="profile-card-{{ loop.index }}"><span class="em-btn__label">View profile</span></a>
+      {%- endif %}
+    </div>
+  </li>
+  {%- endfor %}
+</ul>
+{% endblock %}

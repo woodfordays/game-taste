@@ -1,0 +1,55 @@
+{% from "partials/field.html" import select_field %}
+{#- The body of a profile page: which version is on screen, the version select, then the sections. Context: `shown`, `history`,
+    `base_url` and `questions_label` (see profile.html). Picking a version swaps this whole block and pushes the URL, so a reload or a
+    shared link keeps the version. htmx snapshots a page for Back and Forward from its markup, which still says the select was never
+    changed, so `hx-history="false"` has it ask the server for the page again, which reads the version from the URL.
+
+    A line is an Ember badge with its tag's word, so the color is never the only signal, then the line's text, then the games it comes
+    from. A line with no games has no "From:". Sections with no lines are left out. Open questions are plain, with no tag. -#}
+{%- set version_options = [] %}
+{%- for stamp in history %}
+{%- set _ = version_options.append((stamp.version | string, "Version %d · %s" | format(stamp.version, stamp.created_at | when))) %}
+{%- endfor %}
+<div id="profile-body" class="profile-body">
+  <p class="profile-meta text-body">Version {{ shown.stamp.version }} of {{ history | length }} · updated {{ shown.stamp.created_at | when }}</p>
+
+  <form id="profile-version" class="profile-version" method="get" action="{{ base_url }}"
+    hx-get="{{ base_url }}" hx-target="#profile-body" hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit" hx-sync="this:replace" hx-history="false">
+    {{ select_field("profile-version-select", "version", "Version", version_options, selected=shown.stamp.version | string) }}
+  </form>
+
+  {%- if shown.is_empty %}
+  <p class="profile-nothing text-body">Nothing here yet.</p>
+  {%- else %}
+  <div class="profile-sections">
+    {%- for section in shown.sections %}
+    <section class="profile-section" aria-labelledby="profile-section-{{ section.key }}">
+      <h2 id="profile-section-{{ section.key }}" class="text-title">{{ section.label }}</h2>
+      <ul class="profile-lines">
+        {%- for line in section.lines %}
+        <li class="profile-line">
+          <div class="profile-line__main">
+            <span class="em-badge em-badge--{{ line.tone }} em-badge--sm text-caption">{{ line.tag_label }}</span>
+            <p class="profile-line__text text-body">{{ line.text }}</p>
+          </div>
+          {%- if line.games %}
+          <p class="profile-line__from text-caption">From: {{ line.games | join(", ") }}</p>
+          {%- endif %}
+        </li>
+        {%- endfor %}
+      </ul>
+    </section>
+    {%- endfor %}
+    {%- if shown.questions %}
+    <section class="profile-section" aria-labelledby="profile-section-open_questions">
+      <h2 id="profile-section-open_questions" class="text-title">{{ questions_label }}</h2>
+      <ul class="profile-questions">
+        {%- for question in shown.questions %}
+        <li class="text-body">{{ question }}</li>
+        {%- endfor %}
+      </ul>
+    </section>
+    {%- endif %}
+  </div>
+  {%- endif %}
+</div>

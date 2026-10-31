@@ -19,7 +19,7 @@
       <div class="em-sidenav__sections">
         <div class="em-sidenav__section">
           <ul class="em-sidenav__list">
-            {% for key, label, href in [("home", "Home", "/"), ("library", "Library", "/library"), ("reviews", "Reviews", "/reviews"), ("settings", "Settings", "/settings")] %}
+            {% for key, label, href in [("home", "Home", "/"), ("library", "Library", "/library"), ("reviews", "Reviews", "/reviews"), ("profiles", "Profiles", "/profiles"), ("settings", "Settings", "/settings")] %}
             <li>
               <a href="{{ href }}" class="em-sidenav__item text-label{% if nav == key %} is-current{% endif %}"{% if nav == key %} aria-current="page"{% endif %}>
                 <span class="em-sidenav__label">{{ label }}</span>

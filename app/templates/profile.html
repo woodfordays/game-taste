@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{#- One profile. Context: `label` (the lane's label or the group's current name), `base_url`, `shown` (the version on screen: its
+    stamp, its sections and its open questions; none while the profile has no version), `history` (every version, newest first, with
+    its date and changelog), `questions_label` and `empty` (what to say while there is no version). The body below the title is its
+    own partial because choosing a version swaps just that. The changelog lists every version whichever one is on screen, so it stays
+    put. All of the profile's words are escaped like any text; nothing here marks them as safe. -#}
+{% block title %}{{ label }} profile - Game Taste{% endblock %}
+{% block content %}
+<a class="app-link text-body profile-back" href="/profiles">Back to profiles</a>
+<div class="profile-head">
+  <h1 class="text-headline">{{ label }}</h1>
+  {#- The refresh status area. Empty for now: Refresh now and the status of a running refresh are put inside it. -#}
+  <div id="refresh-area" class="refresh-area"></div>
+</div>
+
+{% if shown %}
+{% include "partials/profile_lines.html" %}
+
+<section class="profile-changelog" aria-labelledby="profile-changelog-title">
+  <h2 id="profile-changelog-title" class="text-title">Changelog</h2>
+  <ul class="profile-changelog__list">
+    {%- for stamp in history %}
+    <li class="profile-changelog__item text-body">Version {{ stamp.version }} · {{ stamp.created_at | when }}: {{ stamp.changelog }}</li>
+    {%- endfor %}
+  </ul>
+</section>
+{% else %}
+<div class="em-empty">
+  <p class="em-empty__desc text-body-lg">{{ empty }}</p>
+</div>
+{% endif %}
+{% endblock %}

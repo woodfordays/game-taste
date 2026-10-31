@@ -286,6 +286,53 @@ def current_version(db: Session, profile: Profile) -> ProfileVersion | None:
     )
 
 
+# --- reading a profile ----------------------------------------------------------------
+
+
+@dataclass
+class VersionStamp:
+    """When a profile version was made and what changed, without its (large) content."""
+
+    version: int
+    created_at: datetime
+    changelog: str
+
+
+def find_profile(db: Session, key: str) -> Profile | None:
+    """The profile with this key (see `lane_key` and `group_key`), or None if it hasn't been
+    created yet."""
+    return db.scalar(select(Profile).where(Profile.key == key))
+
+
+def version_history(db: Session, profile: Profile) -> list[VersionStamp]:
+    """Every version of `profile`, newest first: one query that leaves the content out, so
+    the cost doesn't grow with the size of the profile."""
+    rows = db.execute(
+        select(
+            ProfileVersion.version, ProfileVersion.created_at, ProfileVersion.changelog
+        )
+        .where(ProfileVersion.profile_id == profile.id)
+        .order_by(ProfileVersion.version.desc())
+    )
+    return [VersionStamp(*row) for row in rows]
+
+
+def profile_version(
+    db: Session, profile: Profile, number: int
+) -> ProfileVersion | None:
+    """`profile`'s version `number`, or None if it has no such version."""
+    return db.scalar(
+        select(ProfileVersion).where(
+            ProfileVersion.profile_id == profile.id, ProfileVersion.version == number
+        )
+    )
+
+
+def game_names(db: Session, appids: Iterable[int]) -> dict[int, str]:
+    """{appid: current name} for the games that exist, in one query (none for no ids)."""
+    return _names(db, Game.appid, Game.name, set(appids))
+
+
 # --- what goes to the model ---------------------------------------------------------
 
 

@@ -102,8 +102,9 @@ def render(request: Request, name: str, status_code: int = 200, **ctx) -> HTMLRe
     """Render a template with the shell's context.
 
     Adds `theme` (from the cookie; anything but "light" is dark), `nav` (the current
-    section: "home", "library", "reviews" or "settings"; None by default), `tz` (the
-    timezone setting, UTC by default) and `now` (from the app clock). Values in `ctx` win.
+    section: "home", "library", "reviews", "profiles" or "settings"; None by default),
+    `tz` (the timezone setting, UTC by default) and `now` (from the app clock). Values in
+    `ctx` win.
     """
     app = request.app
     with app.state.session_factory() as db:
