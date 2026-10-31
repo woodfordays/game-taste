@@ -1,10 +1,10 @@
 # Game Taste
 
-Game Taste turns your reviews of the games you play into a picture of what works for you and the people you play with, and uses that picture to recommend what to play next. You run your own copy in a container on your own computer, so your Steam library, reviews and keys stay with you. See [the vision](docs/vision.md) for what it is for and why.
+Game Taste turns your reviews of the games you play into a picture of what works for you and the people you play with, and uses that picture to recommend what to play next. You run your own copy in a container on your own computer. Your Steam library, reviews and keys are stored there, and your reviews are sent to the AI provider you pick. See [the vision](docs/vision.md) for what it is for and why.
 
 ## What works today
 
-Setup, the Library, reviews written by lane (with drafts and a history of every version), and Settings. Taste profiles and recommendations arrive in later updates. The tour in setup and the Settings page already describe them.
+Setup, the Library, reviews written by lane (with drafts and a history of every version), taste profiles, the daily refresh that keeps them current, and Settings. Recommendations arrive in a later update. The tour in setup and the Settings page already describe them.
 
 ## Quick start
 
@@ -31,6 +31,16 @@ Everything you set up can be changed later in Settings.
 
 Inside the container, `localhost` means the container itself, not your computer. To reach a local AI server such as LM Studio or Ollama, use `host.docker.internal` as the host name, for example `http://host.docker.internal:1234/v1`. Replace `1234` with your server's port. Most local servers end the URL in `/v1`. On Linux, the server must listen on all addresses, not only on `127.0.0.1`, or the container can't reach it.
 
+## Profiles and the daily refresh
+
+A taste profile is a short read on what works for one set of players: what they loved, what rules a game out, the patterns across their reviews, and hunches still to test. There is one for each lane (Solo, Two players, Three to four, Five or more) and one for each named group. Profiles are built from your published reviews, not drafts. A profile appears once its lane or group has a published review. Until then its page says so.
+
+The refresh keeps the profiles current. It runs every day at the Refresh time under Schedule in Settings, in the timezone set there, and whenever you select "Refresh now" on Settings or Profiles. If Steam is connected, the refresh syncs your library first. If the app was off at the set time, the refresh runs when the app starts again.
+
+For each profile with new reviews, the refresh asks the Everyday tasks model to update the profile, once for every 20 new reviews. A review tagged with a named group counts for both its lane's profile and the group's, so it is sent for each. The cost depends on the provider you chose. Each update is saved as a new version. If an update fails its checks, the profile keeps its last version and the refresh status says why.
+
+Your reviews go to the provider you picked for Everyday tasks, exactly as you wrote them, with the names of the game, the people and the group. Lane profiles also send a short list of your most-played games and their hours. To keep reviews on your computer, pick a local server for Everyday tasks.
+
 ## Security note
 
 Until a password is set, whoever opens the page first sets it. Port 8420 is open to other devices on your network, so open the page and set your password right after you start the container.
@@ -55,7 +65,7 @@ On Linux the data folder may belong to root. If `touch` says permission denied, 
 
 ## Backups
 
-Copy the whole `data` folder. It holds the database (`game-taste.db`) and the key file (`secret.key`), and the key file is needed to read the stored keys. Without the key file, the keys stored in a copied database can't be read. Run `docker compose stop` first so the copy is taken while nothing is writing, then copy the folder, then run `docker compose start`. On Linux the files in `data` may belong to root, so copying them may need `sudo`.
+Copy the whole `data` folder. It holds the database (`game-taste.db`) and the key file (`secret.key`), and the key file is needed to read the stored keys. Without the key file, the keys stored in a copied database can't be read. Run `docker compose stop` first so the copy is taken while nothing is writing, then copy the folder, then run `docker compose start`. While the app runs, the database has `game-taste.db-wal` and `game-taste.db-shm` files beside it; they are part of the copy, and stopping first folds them into `game-taste.db`. On Linux the files in `data` may belong to root, so copying them may need `sudo`.
 
 To restore, put the folder back as `data` next to `docker-compose.yml` and run `docker compose up -d`.
 
