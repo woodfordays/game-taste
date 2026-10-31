@@ -65,6 +65,7 @@ def services(fake_ai, fake_search, fake_steam) -> Iterator[Services]:
         adapter_factory=fake_ai,
         search_factory=fake_search,
         steam_http=httpx.Client(transport=httpx.MockTransport(fake_steam.handler)),
+        background=False,
     )
     yield services
     services.steam_http.close()

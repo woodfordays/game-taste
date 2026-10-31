@@ -255,3 +255,21 @@ class SearchCall(Base):
     error: Mapped[str | None] = mapped_column(Text)
     run_ref: Mapped[str | None]
     created_at: Mapped[datetime]
+
+
+class Job(Base):
+    """One piece of background work: queued, picked up by the worker, then done or failed."""
+
+    __tablename__ = "job"
+    __table_args__ = (Index("ix_job_kind_status", "kind", "status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str]  # refresh (a later plan adds research)
+    status: Mapped[str]  # queued, running, done or failed
+    requested_by: Mapped[str]  # user or schedule
+    created_at: Mapped[datetime]
+    started_at: Mapped[datetime | None]
+    finished_at: Mapped[datetime | None]
+    # What to tell the user when the job failed. Never an exception's own message, which
+    # might hold a secret.
+    error: Mapped[str | None] = mapped_column(Text)
