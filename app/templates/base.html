@@ -116,7 +116,17 @@
       // The same markup as the toast macro in partials/toast.html, for a danger toast. A danger toast stays until it is dismissed.
       var ICON = '<svg class="em-icon em-toast__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>';
       var CLOSE = '<svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>';
+      // A page that polls keeps failing every couple of seconds while the server is down, and a danger toast stays until it is
+      // dismissed. So a message that is already in the list isn't added again; dismiss it and the next failure shows it once more.
+      function alreadyShown(message) {
+        for (var toast = list.firstElementChild; toast; toast = toast.nextElementSibling) {
+          var title = toast.querySelector(".em-toast__title");
+          if (title && title.textContent === message) return true;
+        }
+        return false;
+      }
       function addToast(message, tone) {
+        if (alreadyShown(message)) return;
         var toast = document.createElement("div");
         toast.className = "em-toast em-toast--" + tone;
         toast.innerHTML = ICON + '<div class="em-toast__content"><p class="em-toast__title text-label"></p></div>' +

@@ -263,6 +263,25 @@ def test_a_failed_request_gets_one_toast_not_two(onboarded_client):
     assert "WeakSet" in text
 
 
+def test_an_error_toast_is_not_added_while_one_with_the_same_text_is_shown(
+    onboarded_client,
+):
+    text = onboarded_client.get("/").text
+    # A page that polls keeps failing every two seconds while the server is down, and a danger
+    # toast stays until it is dismissed. So a message already in the list isn't added again.
+    start = text.index("function alreadyShown(message)")
+    helper = text[start : text.index("function addToast(")]
+    # It looks through the toasts on screen for one with the same text.
+    assert "list.firstElementChild" in helper and "em-toast__title" in helper
+    assert "textContent === message" in helper
+    # It is asked before the toast is built and put in the list.
+    assert (
+        text.index("function addToast(")
+        < text.index("if (alreadyShown(message)) return;")
+        < text.index("list.appendChild(toast)")
+    )
+
+
 def test_pages_without_the_shell_still_have_the_region(client):
     text = client.get("/onboarding/password").text
     assert 'popover="manual"' in text and 'id="toasts"' in text

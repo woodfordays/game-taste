@@ -541,6 +541,59 @@ def test_the_version_form_does_not_inherit_the_reload_settings(
     assert "hx-select" not in form
 
 
+def refresh_with_a_new_review(client, db, app, fake_ai, appid, changelog):
+    """Publish a review of `appid` and refresh, replying with a profile that cites it."""
+    v = publish(db, appid, Lane.SOLO, ReviewForm(rating=8, text="ok"), FIXED_NOW)
+    fake_ai.replies["sample-local"] = profile_reply(
+        changelog,
+        loved=[{"text": "ok", "tag": "stated", "reviews": [v.id], "games": [appid]}],
+    )
+    client.post("/refresh")
+    run_pending_jobs(app)
+    assert client.get("/refresh/status?was=running").headers["HX-Trigger"] == TRIGGER
+
+
+def changelog_text(client, url):
+    """The Changelog as the listener's request gets it: the body fragment of the current URL."""
+    r = client.get(url, headers={"HX-Request": "true"})
+    assert "<html" not in r.text and 'id="profile-body"' in r.text
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", r.text)).split())
+
+
+def test_the_reloaded_body_has_the_new_versions_changelog_entry(
+    onboarded_client, app, db, games, saved_ai_setup, fake_ai
+):
+    url = "/profiles/lane/solo"
+    refresh_with_a_new_review(onboarded_client, db, app, fake_ai, 10, "First read.")
+    first = changelog_text(onboarded_client, url)
+    assert "Version 1 of 1" in first and "Changelog" in first
+    assert "Version 1 · just now: First read." in first
+
+    refresh_with_a_new_review(onboarded_client, db, app, fake_ai, 20, "Added Tactics.")
+    # The page was on the newest version (no ?version=) and moves to the new one, whose entry
+    # is in the changelog beside the old one.
+    second = changelog_text(onboarded_client, url)
+    assert "Version 2 of 2" in second
+    assert "Version 2 · just now: Added Tactics." in second
+    assert "Version 1 · just now: First read." in second
+    assert second.index("Version 2 · just now") < second.index("Version 1 · just now")
+    # A page the user had left on version 1 stays there, with the new entry in its changelog.
+    kept = changelog_text(onboarded_client, url + "?version=1")
+    assert "Version 1 of 2" in kept and "Version 2 · just now: Added Tactics." in kept
+
+
+def test_the_first_version_brings_its_changelog_to_a_page_that_had_none(
+    onboarded_client, app, db, games, saved_ai_setup, fake_ai
+):
+    """The empty page asks for `#profile-body`; what it gets back now holds the changelog."""
+    before = onboarded_client.get("/profiles/lane/solo").text
+    assert "Changelog" not in before
+    refresh_with_a_new_review(onboarded_client, db, app, fake_ai, 10, "First read.")
+    assert "Version 1 · just now: First read." in changelog_text(
+        onboarded_client, "/profiles/lane/solo"
+    )
+
+
 def test_the_body_fragment_has_no_status_area(
     onboarded_client, db, games, saved_ai_setup, fake_ai
 ):

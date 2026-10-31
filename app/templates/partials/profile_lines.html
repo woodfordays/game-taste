@@ -1,11 +1,15 @@
 {% from "partials/field.html" import select_field %}
-{#- The body of a profile page: which version is on screen, the version select, then the sections. Context: `shown`, `history`,
-    `base_url` and `questions_label` (see profile.html). Picking a version swaps this whole block and pushes the URL, so a reload or a
-    shared link keeps the version. htmx snapshots a page for Back and Forward from its markup, which still says the select was never
+{#- The body of a profile page: which version is on screen, the version select, the sections, then the changelog. Context: `shown`,
+    `history`, `base_url` and `questions_label` (see profile.html). Picking a version swaps this whole block and pushes the URL, so a
+    reload or a shared link keeps the version. htmx snapshots a page for Back and Forward from its markup, which still says the select was never
     changed, so `hx-history="false"` has it ask the server for the page again, which reads the version from the URL.
 
     A line is an Ember badge with its tag's word, so the color is never the only signal, then the line's text, then the games it comes
     from. A line with no games has no "From:". Sections with no lines are left out. Open questions are plain, with no tag.
+
+    The changelog lists every version, whichever one is on screen, newest first. It is part of the body, not of the page around it, so a
+    body that loads again when a refresh finishes brings the new version's entry with it, and so does the first version of a profile that
+    had none. Choosing a version draws the same list again, which changes nothing.
 
     The body reloads itself when a refresh finishes (the `profiles-refreshed` event). `hx-get=""` is the address the browser is on, so the
     version in the URL, if the select pushed one, is the version that comes back, and a page on the newest version moves to the new one.
@@ -57,4 +61,13 @@
     {%- endif %}
   </div>
   {%- endif %}
+
+  <section class="profile-changelog" aria-labelledby="profile-changelog-title">
+    <h2 id="profile-changelog-title" class="text-title">Changelog</h2>
+    <ul class="profile-changelog__list">
+      {%- for stamp in history %}
+      <li class="profile-changelog__item text-body">Version {{ stamp.version }} · {{ stamp.created_at | when }}: {{ stamp.changelog }}</li>
+      {%- endfor %}
+    </ul>
+  </section>
 </div>

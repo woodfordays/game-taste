@@ -3,6 +3,7 @@ with its tagged lines, the games behind them, earlier versions and a changelog."
 
 import html
 import re
+from html.parser import HTMLParser
 from datetime import timedelta
 from pathlib import Path
 
@@ -131,6 +132,38 @@ def add_game(db, appid: int, name: str) -> Game:
 def visible(markup: str) -> str:
     """The text a reader sees: tags removed, entities decoded, spaces collapsed."""
     return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", markup)).split())
+
+
+class _BodyWatcher(HTMLParser):
+    """Notes whether a `section.profile-changelog` opens while `div#profile-body` is open."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.depth = 0  # divs open inside the body; 0 when outside it
+        self.found = False
+        self._in_body = False
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "div":
+            if self._in_body:
+                self.depth += 1
+            elif attrs.get("id") == "profile-body":
+                self._in_body, self.depth = True, 1
+        elif tag == "section" and self._in_body:
+            if "profile-changelog" in (attrs.get("class") or "").split():
+                self.found = True
+
+    def handle_endtag(self, tag):
+        if tag == "div" and self._in_body:
+            self.depth -= 1
+            self._in_body = self.depth > 0
+
+
+def changelog_is_inside_the_body(markup: str) -> bool:
+    watcher = _BodyWatcher()
+    watcher.feed(markup)
+    return watcher.found
 
 
 def badges(markup: str) -> list[tuple[str, str]]:
@@ -762,9 +795,26 @@ def test_htmx_gets_just_the_profile_body(
     assert "<html" not in r.text and "em-sidenav" not in r.text
     assert 'id="profile-body"' in r.text
     assert "Version 1 of 2" in r.text and "Hates long grinds" not in r.text
-    assert "Changelog" not in r.text
+    # The changelog is part of the body, so a body that loads again after a refresh brings
+    # the new version's entry with it. It lists every version, whichever one is on screen.
+    text = visible(r.text)
+    assert "Changelog" in text
+    assert "Version 2 · just now: Added a dealbreaker." in text
+    assert "Version 1 · Jan 13, 12:00 PM: First read of your reviews." in text
     vary = r.headers["vary"].lower()
     assert "hx-request" in vary and "hx-history-restore-request" in vary
+
+
+def test_the_changelog_is_inside_the_profile_body(
+    onboarded_client, db, built_solo_profile_two_versions
+):
+    for markup in (
+        onboarded_client.get("/profiles/lane/solo").text,
+        onboarded_client.get(
+            "/profiles/lane/solo", headers={"HX-Request": "true"}
+        ).text,
+    ):
+        assert changelog_is_inside_the_body(markup)
 
 
 def test_history_restore_gets_the_whole_page(

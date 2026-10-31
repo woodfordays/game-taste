@@ -1303,11 +1303,13 @@
   overflow-wrap: anywhere;
 }
 
+/* It ends the body, whose own gap (space-6) comes first; this tops it up to the space-8 that
+   separates the sections. */
 .profile-changelog {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  margin-top: var(--space-8);
+  margin-top: calc(var(--space-8) - var(--space-6));
 }
 
 .profile-changelog__item {
