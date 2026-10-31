@@ -1022,14 +1022,19 @@ def test_the_run_saves_its_progress_as_it_goes(
         # What a status poll would read while this profile waits on the model.
         with app.state.session_factory() as other:
             row = other.scalars(select(RefreshRun)).one()
-            seen.append((row.profiles_total, row.profiles_checked))
+            seen.append((row.profiles_total, row.profiles_checked, row.current_profile))
         return cite_the_first_ref(prompt)
 
     fake_ai.replies["sample-local"] = reply
     run = refresh(app, db)
-    # Solo, Three to four and the group: each is counted once it has been checked.
-    assert seen == [(3, 0), (3, 1), (3, 2)]
-    assert (run.profiles_total, run.profiles_checked) == (3, 3)
+    # Solo, Three to four and the group: each is named while it is worked on and counted
+    # once it has been checked.
+    assert seen == [(3, 0, "Solo"), (3, 1, "Three to four"), (3, 2, "Sample Crew")]
+    assert (run.profiles_total, run.profiles_checked, run.current_profile) == (
+        3,
+        3,
+        None,
+    )
 
 
 def test_a_profile_with_nothing_new_is_counted_as_checked(
@@ -1065,7 +1070,11 @@ def test_a_new_run_has_not_counted_its_profiles_yet(db):
     db.add(run)
     db.commit()
     db.refresh(run)
-    assert (run.profiles_total, run.profiles_checked) == (None, 0)
+    assert (run.profiles_total, run.profiles_checked, run.current_profile) == (
+        None,
+        0,
+        None,
+    )
 
 
 def test_migration_0007_adds_the_progress_to_existing_runs(tmp_path):
@@ -1092,14 +1101,16 @@ def test_migration_0007_adds_the_progress_to_existing_runs(tmp_path):
     command.upgrade(config, "head")
     with engine.connect() as conn:
         row = conn.execute(
-            text("select profiles_total, profiles_checked from refresh_run")
+            text(
+                "select profiles_total, profiles_checked, current_profile from refresh_run"
+            )
         ).one()
-    assert tuple(row) == (None, 0)
+    assert tuple(row) == (None, 0, None)
     command.downgrade(config, "0006")
     with engine.connect() as conn:
         columns = {
             column[1] for column in conn.execute(text("pragma table_info(refresh_run)"))
         }
         assert conn.execute(text("select count(*) from refresh_run")).scalar() == 1
-    assert "profiles_total" not in columns and "profiles_checked" not in columns
+    assert not columns & {"profiles_total", "profiles_checked", "current_profile"}
     engine.dispose()

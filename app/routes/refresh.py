@@ -4,10 +4,12 @@ Both routes answer with the status partial and nothing else, always with status 
 doesn't swap an error status, and a refresh that is already pending is not an error, the status
 just shows it. While a refresh is queued or running the partial polls `GET /refresh/status` and
 swaps itself. The poll that first finds it finished answers with the `profiles-refreshed` event,
-which the Profiles pages listen for to load what the refresh made.
+which the Profiles pages listen for to load what the refresh made. A poll that would show the
+same progress as the page already does (`shown`) answers 204 instead, which htmx doesn't swap,
+so the moving bar isn't redrawn every two seconds.
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -18,7 +20,7 @@ from app.jobs import (
     enqueue_job,
     notify_worker,
 )
-from app.services.refresh_status import IDLE, refresh_context
+from app.services.refresh_status import IDLE, refresh_context, refresh_status
 from app.web import render
 
 router = APIRouter()
@@ -50,8 +52,16 @@ def refresh_now(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/refresh/status")
 def refresh_status_page(
-    request: Request, was: str | None = None, db: Session = Depends(get_db)
+    request: Request,
+    was: str | None = None,
+    shown: str | None = None,
+    db: Session = Depends(get_db),
 ):
     """The status. `was` is the state the polling page last showed: when it was queued or
-    running and the refresh is now over, the answer carries the `profiles-refreshed` event."""
+    running and the refresh is now over, the answer carries the `profiles-refreshed` event.
+    `shown` is the key of the progress it showed: when that is still what a pending refresh
+    would show, the answer is 204 and the page keeps what it has."""
+    progress = refresh_status(db).progress
+    if shown is not None and progress is not None and progress.key == shown:
+        return Response(status_code=204)
     return _status_response(request, db, was_pending=was in PENDING)

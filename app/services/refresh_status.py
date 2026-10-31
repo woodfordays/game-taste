@@ -27,6 +27,8 @@ QUEUED_LABEL = "Refresh queued."
 STARTING_LABEL = "Refreshing profiles."
 STEAM_LABEL = "Syncing your Steam library."
 PROFILES_LABEL = "Updating profiles."
+PROFILE_LABEL = "Updating {label}."
+COUNT = "{number} of {total}"
 
 # The outcomes the refresh records for a profile (see app/routines/refresh.py).
 UPDATED = "updated"
@@ -44,13 +46,18 @@ class FailedProfile:
 
 @dataclass(frozen=True)
 class Progress:
-    """The progress bar of a pending refresh. `done` and `total` are set once the refresh has
-    counted its profiles, and the bar fills as it checks them. Without them the bar only shows
-    that the refresh is waiting or working."""
+    """The progress bar of a pending refresh: what it is doing (`label`) and, once it has
+    counted its profiles, which one it is on ("2 of 5"). The bar keeps moving rather than
+    filling, because nearly all the time goes on model calls whose length nothing can tell."""
 
     label: str
-    done: int | None = None
-    total: int | None = None
+    count: str | None = None
+
+    @property
+    def key(self) -> str:
+        """What the bar shows, as one string. A poll that would show the same answers with
+        no content, so the bar on screen isn't redrawn and its motion doesn't restart."""
+        return f"{self.label}|{self.count or ''}"
 
 
 @dataclass(frozen=True)
@@ -81,7 +88,14 @@ class RefreshStatus:
             return Progress(STEAM_LABEL)
         if total == 0:
             return Progress(PROFILES_LABEL)
-        return Progress(PROFILES_LABEL, min(self.run.profiles_checked, total), total)
+        checked = min(self.run.profiles_checked, total)
+        current = self.run.current_profile
+        if current is None:  # between two profiles, or past the last
+            return Progress(PROFILES_LABEL, COUNT.format(number=checked, total=total))
+        number = min(checked + 1, total)
+        return Progress(
+            PROFILE_LABEL.format(label=current), COUNT.format(number=number, total=total)
+        )
 
     @property
     def _details(self) -> list[dict]:

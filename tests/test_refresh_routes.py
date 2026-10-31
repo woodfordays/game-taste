@@ -5,6 +5,7 @@ import html
 import re
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from conftest import FIXED_NOW
@@ -165,12 +166,12 @@ def test_queued_and_running_copy_and_polling(onboarded_client, db):
     r = onboarded_client.get("/refresh/status")
     assert "Refresh queued." in r.text and "Refreshing profiles." not in r.text
     tag = root(r.text)
-    assert 'hx-get="/refresh/status?was=queued"' in tag
+    assert 'hx-get="/refresh/status?was=queued&amp;shown=' in tag
     assert 'hx-trigger="every 2s"' in tag and 'hx-swap="outerHTML"' in tag
     set_job(db, job, status="running", started_at=FIXED_NOW)
     r = onboarded_client.get("/refresh/status?was=queued")
     assert "Refreshing profiles." in r.text and "Refresh queued." not in r.text
-    assert 'hx-get="/refresh/status?was=running"' in root(r.text)
+    assert 'hx-get="/refresh/status?was=running&amp;shown=' in root(r.text)
 
 
 def test_idle_status_carries_no_polling_and_keeps_its_id(onboarded_client, db):
@@ -484,7 +485,7 @@ def test_settings_shows_a_pending_refresh_and_keeps_polling(onboarded_client, db
     running_job(db)
     text = onboarded_client.get("/settings").text
     assert "Refreshing profiles." in text
-    assert 'hx-get="/refresh/status?was=running"' in root(text)
+    assert 'hx-get="/refresh/status?was=running&amp;shown=' in root(text)
 
 
 def test_profile_pages_show_the_status_inside_the_refresh_area(onboarded_client, db):
@@ -618,7 +619,7 @@ def test_a_page_with_no_version_reloads_when_the_refresh_ends(onboarded_client):
 # --- the progress bar ---------------------------------------------------------
 
 
-def progress_run(db, job, total=None, checked=0, steam_summary=""):
+def progress_run(db, job, total=None, checked=0, current=None, steam_summary=""):
     """The run of a refresh that is still going, as far as it has got."""
     db.add(
         RefreshRun(
@@ -627,14 +628,19 @@ def progress_run(db, job, total=None, checked=0, steam_summary=""):
             steam_summary=steam_summary,
             profiles_total=total,
             profiles_checked=checked,
+            current_profile=current,
         )
     )
     db.commit()
 
 
 def progress_bar(text):
-    """The progress bar's element, or None when the status shows none."""
-    found = re.search(r'<div[^>]*role="progressbar".*?</div>\s*</div>', text, re.S)
+    """The progress bar (Ember's `.em-progress`), or None when the status shows none."""
+    found = re.search(
+        r'<div class="em-progress [^"]*">.*?<div class="em-progress__track".*?</div>\s*</div>',
+        text,
+        re.S,
+    )
     return found[0] if found else None
 
 
@@ -642,15 +648,23 @@ def bar_text(bar):
     return " ".join(re.sub(r"<[^>]+>", " ", bar).split())
 
 
-def test_a_queued_refresh_shows_a_bar_that_is_waiting(onboarded_client, db):
-    queued_job(db)
+def track(bar):
+    """The opening tag of the bar's track, which is the `progressbar`."""
+    return re.search(r'<div class="em-progress__track"[^>]*>', bar)[0]
+
+
+def shown_key(text):
+    """The `shown` value the status polls with, decoded."""
+    url = html.unescape(re.search(r'hx-get="([^"]*)"', root(text))[1])
+    return parse_qs(urlsplit(url).query)["shown"][0]
+
+
+def test_a_queued_refresh_and_one_just_picked_up_show_a_moving_bar(onboarded_client, db):
+    job = queued_job(db)
     bar = progress_bar(status_text(onboarded_client))
-    assert bar and "is-indeterminate" in bar and "aria-valuenow" not in bar
-    assert bar_text(bar) == "Refresh queued."
-
-
-def test_a_refresh_that_just_started_shows_a_moving_bar(onboarded_client, db):
-    running_job(db)
+    assert "is-indeterminate" in bar and bar_text(bar) == "Refresh queued."
+    # Picked up, and its run not written yet.
+    set_job(db, job, status="running", started_at=FIXED_NOW)
     bar = progress_bar(status_text(onboarded_client))
     assert "is-indeterminate" in bar and bar_text(bar) == "Refreshing profiles."
 
@@ -662,20 +676,24 @@ def test_the_steam_sync_shows_a_moving_bar(onboarded_client, db):
     assert bar_text(bar) == "Syncing your Steam library."
 
 
-def test_the_profiles_fill_the_bar_as_they_are_checked(onboarded_client, db):
-    progress_run(db, running_job(db), total=5, checked=2, steam_summary="Steam synced.")
+def test_the_bar_names_the_profile_it_is_on(onboarded_client, db):
+    progress_run(db, running_job(db), total=5, checked=1, current="Two players")
     bar = progress_bar(status_text(onboarded_client))
-    assert "is-indeterminate" not in bar
-    assert 'aria-valuemin="0"' in bar and 'aria-valuemax="5"' in bar
-    assert 'aria-valuenow="2"' in bar and 'aria-valuetext="2 of 5"' in bar
-    assert 'style="width: 40.0%"' in bar
+    # It keeps moving: nothing can tell how long the model takes.
+    assert "is-indeterminate" in bar and "aria-valuenow" not in bar
+    assert bar_text(bar) == "Updating Two players. 2 of 5"
+    assert 'aria-valuetext="2 of 5"' in track(bar)
+
+
+def test_between_profiles_the_bar_counts_those_done(onboarded_client, db):
+    progress_run(db, running_job(db), total=5, checked=2)
+    bar = progress_bar(status_text(onboarded_client))
     assert bar_text(bar) == "Updating profiles. 2 of 5"
 
 
-def test_a_bar_never_runs_past_full(onboarded_client, db):
-    progress_run(db, running_job(db), total=2, checked=3)
-    bar = progress_bar(status_text(onboarded_client))
-    assert 'aria-valuenow="2"' in bar and 'style="width: 100.0%"' in bar
+def test_the_count_never_runs_past_the_total(onboarded_client, db):
+    progress_run(db, running_job(db), total=2, checked=2, current="Solo")
+    assert bar_text(progress_bar(status_text(onboarded_client))) == "Updating Solo. 2 of 2"
 
 
 def test_no_profiles_to_check_shows_a_moving_bar(onboarded_client, db):
@@ -692,18 +710,80 @@ def test_an_idle_status_has_no_bar(onboarded_client, db):
     assert progress_bar(status_text(onboarded_client)) is None
 
 
-def test_the_bar_is_the_ember_progress_component(onboarded_client, db):
-    progress_run(db, running_job(db), total=4, checked=1)
+def test_the_bar_is_embers_progress_with_its_track_as_the_progressbar(
+    onboarded_client, db
+):
+    progress_run(db, running_job(db), total=4, checked=0, current="Solo")
     bar = progress_bar(status_text(onboarded_client))
-    assert 'class="em-progress em-progress--ember' in bar
-    assert '<div class="em-progress__track"><span class="em-progress__fill"' in bar
-    assert 'aria-label="Updating profiles."' in bar
+    assert bar.startswith('<div class="em-progress em-progress--ember em-progress--md is-indeterminate">')
+    assert '<span id="refresh-progress-label" class="em-progress__label text-label">Updating Solo.</span>' in bar
+    assert '<span class="em-progress__value text-caption">1 of 4</span>' in bar
+    tag = track(bar)
+    assert 'role="progressbar"' in tag and 'aria-labelledby="refresh-progress-label"' in tag
+    assert 'aria-valuemin="0"' in tag and "aria-valuemax" not in tag
+    assert bar.count('role="progressbar"') == 1
+
+
+def test_a_group_name_in_the_bar_is_escaped(onboarded_client, db):
+    progress_run(db, running_job(db), total=1, current="<b>Crew</b>")
+    raw = onboarded_client.get("/refresh/status").text
+    assert "<b>Crew</b>" not in raw and "Updating &lt;b&gt;Crew&lt;/b&gt;." in raw
 
 
 def test_every_page_with_the_status_shows_the_bar(onboarded_client, db):
-    progress_run(db, running_job(db), total=4, checked=1)
+    progress_run(db, running_job(db), total=4, checked=1, current="Solo")
     for url in ("/settings", "/profiles", "/profiles/lane/solo"):
         text = html.unescape(onboarded_client.get(url).text)
         # Settings has other bars (the AI check's, Steam's) before the status area.
         bar = progress_bar(text[text.index('id="refresh-status"') :])
-        assert bar and "1 of 4" in bar, url
+        assert bar and bar_text(bar) == "Updating Solo. 2 of 4", url
+
+
+# --- polls with nothing new ---------------------------------------------------
+
+
+def test_the_status_polls_with_what_it_shows(onboarded_client, db):
+    progress_run(db, running_job(db), total=3, checked=0, current="Solo & friends")
+    text = onboarded_client.get("/refresh/status").text
+    assert shown_key(text) == "Updating Solo & friends.|1 of 3"
+    assert "was=running" in root(text)
+
+
+def test_a_poll_with_nothing_new_answers_no_content(onboarded_client, db):
+    progress_run(db, running_job(db), total=3, checked=0, current="Solo")
+    key = shown_key(onboarded_client.get("/refresh/status").text)
+    r = onboarded_client.get("/refresh/status", params={"was": "running", "shown": key})
+    assert r.status_code == 204 and r.text == "" and "HX-Trigger" not in r.headers
+
+
+def test_a_poll_after_progress_answers_with_the_new_bar(onboarded_client, db):
+    job = running_job(db)
+    progress_run(db, job, total=3, checked=0, current="Solo")
+    key = shown_key(onboarded_client.get("/refresh/status").text)
+    db.execute(
+        update(RefreshRun)
+        .where(RefreshRun.job_id == job.id)
+        .values(profiles_checked=1, current_profile="Two players")
+    )
+    db.commit()
+    r = onboarded_client.get("/refresh/status", params={"was": "running", "shown": key})
+    assert r.status_code == 200
+    assert bar_text(progress_bar(html.unescape(r.text))) == "Updating Two players. 2 of 3"
+
+
+def test_a_poll_that_finds_the_refresh_over_still_sends_the_event(onboarded_client, db):
+    job = running_job(db)
+    progress_run(db, job, total=1, checked=0, current="Solo")
+    key = shown_key(onboarded_client.get("/refresh/status").text)
+    set_job(db, job, status="done", finished_at=FIXED_NOW)
+    r = onboarded_client.get("/refresh/status", params={"was": "running", "shown": key})
+    assert r.status_code == 200 and r.headers["HX-Trigger"] == TRIGGER
+    assert progress_bar(r.text) is None
+
+
+def test_queued_then_running_is_new_to_the_page(onboarded_client, db):
+    job = queued_job(db)
+    key = shown_key(onboarded_client.get("/refresh/status").text)
+    set_job(db, job, status="running", started_at=FIXED_NOW)
+    r = onboarded_client.get("/refresh/status", params={"was": "queued", "shown": key})
+    assert r.status_code == 200 and "Refreshing profiles." in r.text

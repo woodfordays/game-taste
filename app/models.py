@@ -332,9 +332,10 @@ class RefreshRun(Base):
     `versions` are the version numbers the refresh saved, and `message` is the changelog line
     of the newest one, or why the profile wasn't updated.
 
-    `profiles_total` and `profiles_checked` are the progress bar while it runs: how many
-    profiles it will look at (None until it has counted them, after the Steam sync) and how
-    many it has finished with, including those that had nothing new."""
+    `profiles_total`, `profiles_checked` and `current_profile` are its progress while it runs:
+    how many profiles it will look at (None until it has counted them, after the Steam sync),
+    how many it has finished with, those that had nothing new included, and the label of the
+    one it is on (None between profiles and once it is done)."""
 
     __tablename__ = "refresh_run"
 
@@ -348,3 +349,4 @@ class RefreshRun(Base):
     details: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]")
     profiles_total: Mapped[int | None]
     profiles_checked: Mapped[int] = mapped_column(server_default="0")
+    current_profile: Mapped[str | None] = mapped_column(Text)

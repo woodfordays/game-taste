@@ -20,8 +20,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Two plain new columns, so SQLite adds them in place. A run from before this has no
-    # total (NULL) and nothing checked (0), which is right for a refresh that has ended.
+    # Plain new columns, so SQLite adds them in place. A run from before this has no total
+    # (NULL), nothing checked (0) and no profile in progress (NULL): right for a finished run.
     op.add_column(
         "refresh_run", sa.Column("profiles_total", sa.Integer(), nullable=True)
     )
@@ -29,6 +29,7 @@ def upgrade() -> None:
         "refresh_run",
         sa.Column("profiles_checked", sa.Integer(), server_default="0", nullable=False),
     )
+    op.add_column("refresh_run", sa.Column("current_profile", sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
@@ -36,5 +37,6 @@ def downgrade() -> None:
     with op.batch_alter_table(
         "refresh_run", schema=None, reflect_kwargs={"resolve_fks": False}
     ) as batch_op:
+        batch_op.drop_column("current_profile")
         batch_op.drop_column("profiles_checked")
         batch_op.drop_column("profiles_total")
