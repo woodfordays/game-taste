@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -45,6 +45,10 @@ Tag = Literal["stated", "observed", "guess"]
 class ProfileLine(BaseModel):
     """One claim about the player's taste, with the evidence behind it."""
 
+    # A misspelled name is an error (and gets the model's one retry) rather than a field
+    # that is quietly dropped along with its lines.
+    model_config = ConfigDict(extra="forbid")
+
     text: str = Field(min_length=1, max_length=400)
     tag: Tag
     games: list[int] = []  # appids
@@ -52,6 +56,8 @@ class ProfileLine(BaseModel):
 
 
 class ProfileContent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     loved: list[ProfileLine] = Field(default=[], max_length=15)
     dealbreakers: list[ProfileLine] = Field(default=[], max_length=15)
     patterns: list[ProfileLine] = Field(default=[], max_length=15)
@@ -62,6 +68,8 @@ class ProfileContent(BaseModel):
 
 class ProfileUpdate(BaseModel):
     """What the model sends back: the whole new profile and a note on what changed."""
+
+    model_config = ConfigDict(extra="forbid")
 
     profile: ProfileContent
     changelog: str = Field(min_length=1, max_length=300)

@@ -303,8 +303,8 @@ class ProfileVersion(Base):
     content: Mapped[dict] = mapped_column(JSON, default=dict)
     changelog: Mapped[str] = mapped_column(Text, default="")
     ai_call_id: Mapped[int | None] = mapped_column(ForeignKey("ai_call.id"))
-    # The refresh run that made this version. A plain number until the run table exists.
-    refresh_run_id: Mapped[int | None]
+    # The refresh run that made this version.
+    refresh_run_id: Mapped[int | None] = mapped_column(ForeignKey("refresh_run.id"))
     model: Mapped[str]
     provider_kind: Mapped[str]
     prompt_name: Mapped[str]
@@ -323,3 +323,22 @@ class ProfileVersionSource(Base):
     review_version_id: Mapped[int] = mapped_column(
         ForeignKey("review_version.id"), primary_key=True
     )
+
+
+class RefreshRun(Base):
+    """What one refresh did: the Steam sync and, for each profile with new reviews, whether it
+    was updated. `details` is a list of `{"key", "label", "outcome", "versions", "message"}`:
+    the outcome is "updated", "failed" or "skipped" (the refresh doesn't use "skipped" yet),
+    `versions` are the version numbers the refresh saved, and `message` is the changelog line
+    of the newest one, or why the profile wasn't updated."""
+
+    __tablename__ = "refresh_run"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("job.id"), unique=True)
+    started_at: Mapped[datetime]
+    finished_at: Mapped[datetime | None]
+    steam_summary: Mapped[str] = mapped_column(Text, server_default="")
+    profiles_updated: Mapped[int] = mapped_column(server_default="0")
+    profiles_failed: Mapped[int] = mapped_column(server_default="0")
+    details: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]")

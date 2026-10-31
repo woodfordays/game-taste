@@ -12,13 +12,14 @@ from fastapi.staticfiles import StaticFiles
 from app.auth import install_auth
 from app.config import Paths
 from app.db import make_engine, make_session_factory, run_migrations
-from app.jobs import background_lifespan, recover_interrupted_jobs
+from app.jobs import REFRESH_KIND, background_lifespan, recover_interrupted_jobs
 from app.routes import auth as auth_routes
 from app.routes import home as home_routes
 from app.routes import library as library_routes
 from app.routes import onboarding as onboarding_routes
 from app.routes import reviews as review_routes
 from app.routes import settings as settings_routes
+from app.routines.refresh import run_refresh
 from app.services.ai import Adapter, ProviderConfig, make_adapter
 from app.services.search import SearchClient, make_search_client
 from app.services.secrets import (
@@ -71,7 +72,7 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
     app.state.engine = make_engine(paths.db_path)
     app.state.session_factory = make_session_factory(app.state.engine)
     # Handlers by job kind, each called with a JobContext and the job's id.
-    app.state.job_handlers = {}
+    app.state.job_handlers = {REFRESH_KIND: run_refresh}
     app.state.job_wakeup = threading.Event()
     # How finished jobs ended when saving it failed, by job id (see app/jobs.py).
     app.state.unrecorded_outcomes = {}

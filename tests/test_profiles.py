@@ -8,12 +8,14 @@ from pydantic import ValidationError
 from sqlalchemy import event, func, select
 from sqlalchemy.exc import IntegrityError
 
+from app.jobs import enqueue_job
 from app.models import (
     AiCall,
     Game,
     Profile,
     ProfileVersion,
     ProfileVersionSource,
+    RefreshRun,
     ReviewVersion,
 )
 from app.services.people import add_group, rename_group
@@ -285,6 +287,22 @@ def test_schema_limits():
             "changelog": "x" * 300,
         }
     )
+
+
+def test_a_misspelled_name_is_refused_not_dropped():
+    # Without this a "hunchs" section, or a "game" key, would silently lose its lines.
+    line = {"text": "x", "tag": "guess"}
+    for payload in (
+        {"profile": {"hunchs": [line]}, "changelog": "c"},
+        {"profile": {"loved": [{**line, "game": [10]}]}, "changelog": "c"},
+        {"profile": {}, "changelog": "c", "notes": "extra"},
+    ):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            ProfileUpdate.model_validate(payload)
+    with pytest.raises(ValidationError):
+        ProfileContent.model_validate({"hunchs": []})
+    with pytest.raises(ValidationError):
+        ProfileLine.model_validate({**line, "appids": [10]})
 
 
 def test_profile_reply_builds_a_parsable_update():
@@ -891,6 +909,10 @@ def test_save_version_numbers_and_records(db, games):
     profile = solo_profile(db)
     call_one = fake_call(db, model="model-one", prompt_version="p1")
     call_two = fake_call(db, model="model-two", prompt_version="p2")
+    job = enqueue_job(db, "refresh", "user", FIXED_NOW)
+    run = RefreshRun(job_id=job.id, started_at=FIXED_NOW)
+    db.add(run)
+    db.commit()
     first = save_version(
         db,
         profile,
@@ -907,7 +929,7 @@ def test_save_version_numbers_and_records(db, games):
         ok_update(reviews=[v2.id], games=[20], changelog="Second pass."),
         source_ids=[v2.id],
         call=call_two,
-        refresh_run_id=7,
+        refresh_run_id=run.id,
         now=later,
     )
     db.expire_all()
@@ -931,7 +953,7 @@ def test_save_version_numbers_and_records(db, games):
     }
     assert first.content["open_questions"] == [] and first.content["hunches"] == []
     assert (first.ai_call_id, first.refresh_run_id) == (call_one.id, None)
-    assert (second.ai_call_id, second.refresh_run_id) == (call_two.id, 7)
+    assert (second.ai_call_id, second.refresh_run_id) == (call_two.id, run.id)
     assert (first.model, first.provider_kind) == ("model-one", "anthropic")
     assert (first.prompt_name, first.prompt_version) == ("profile_update", "p1")
     assert second.prompt_version == "p2" and second.model == "model-two"
