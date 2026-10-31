@@ -5,7 +5,9 @@ saying what it did, step by step, so the status shown to the user is a record an
 guess:
 
 1. Steam sync, when Steam is connected. A Steam problem is recorded and the refresh carries on.
-2. For each profile with review versions it hasn't learned from, the Everyday tasks model gets
+2. It counts the profiles with published reviews, then works through them, saving how many
+   it has checked after each one, so the status can show how far it has got.
+3. For each profile with review versions it hasn't learned from, the Everyday tasks model gets
    the current profile and up to 20 of those reviews and sends back the whole new profile.
    `validate_update` checks the evidence rules before anything is saved. A profile that
    fails keeps its old version, and the next profile goes on. A model that isn't set up
@@ -91,6 +93,8 @@ class _Run:
     id: int
     steam_summary: str = ""
     results: list[_ProfileResult] = field(default_factory=list)
+    profiles_total: int | None = None
+    profiles_checked: int = 0
 
     def save(self, ctx: JobContext, *, finished: bool = False) -> None:
         """Write what has happened so far, so a refresh cut short still shows its progress."""
@@ -102,6 +106,8 @@ class _Run:
             row.profiles_failed = sum(
                 1 for result in self.results if result.outcome == FAILED
             )
+            row.profiles_total = self.profiles_total
+            row.profiles_checked = self.profiles_checked
             if finished:
                 row.finished_at = ctx.services.clock()
             db.commit()
@@ -159,6 +165,8 @@ def _update_profiles(ctx: JobContext, run: _Run) -> None:
     prompt = load_prompt(PROMPT_NAME)
     with ctx.session_factory() as db:
         targets = targets_with_reviews(db)
+    run.profiles_total = len(targets)
+    run.save(ctx)
     for target in targets:
         result = _ProfileResult(target.key, target.label)
         try:
@@ -170,7 +178,9 @@ def _update_profiles(ctx: JobContext, run: _Run) -> None:
             stop = False
         if result.outcome is not None:
             run.results.append(result)
-            run.save(ctx)
+        # Saved after every profile, one with nothing new included, so the bar keeps moving.
+        run.profiles_checked += 1
+        run.save(ctx)
         if stop:
             return
 

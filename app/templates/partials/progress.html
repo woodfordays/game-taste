@@ -1,0 +1,23 @@
+{#- Ember's progress bar. With `done` and a nonzero `total` it fills to done of total and says so ("2 of 5"); without them it is the
+    moving bar that only says something is happening. The label is visible text and the bar's accessible name. -#}
+{% macro progress_bar(label, done=none, total=none) -%}
+{%- set filled = done is not none and total %}
+<div class="em-progress em-progress--ember{% if not filled %} is-indeterminate{% endif %}" role="progressbar" aria-label="{{ label }}"
+  {%- if filled %} aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ done }}" aria-valuetext="{{ done }} of {{ total }}"{% endif %}>
+  <div class="em-progress__row">
+    <span class="em-progress__label text-label">{{ label }}</span>
+    {%- if filled %}
+    <span class="em-progress__value text-caption">{{ done }} of {{ total }}</span>
+    {%- endif %}
+  </div>
+  <div class="em-progress__track"><span class="em-progress__fill"{% if filled %} style="width: {{ (100 * done / total) | round(1) }}%"{% endif %}></span></div>
+</div>
+{%- endmacro %}
+
+{#- A note that shows a moving bar while an htmx request is out. It is hidden until htmx adds `htmx-request` to it (when a trigger names it
+    in `hx-indicator`) or to the form it sits in. `id` and `class` let a page place it. -#}
+{% macro busy_note(label, id=none, class="") -%}
+<div{% if id %} id="{{ id }}"{% endif %} class="htmx-indicator busy-note{% if class %} {{ class }}{% endif %}" role="status">
+  {{ progress_bar(label) }}
+</div>
+{%- endmacro %}

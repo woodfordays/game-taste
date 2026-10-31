@@ -22,6 +22,12 @@ from app.services.settings import (
 
 IDLE = "idle"
 
+# What the progress bar says while a refresh is pending, step by step.
+QUEUED_LABEL = "Refresh queued."
+STARTING_LABEL = "Refreshing profiles."
+STEAM_LABEL = "Syncing your Steam library."
+PROFILES_LABEL = "Updating profiles."
+
 # The outcomes the refresh records for a profile (see app/routines/refresh.py).
 UPDATED = "updated"
 FAILED = "failed"
@@ -37,6 +43,17 @@ class FailedProfile:
 
 
 @dataclass(frozen=True)
+class Progress:
+    """The progress bar of a pending refresh. `done` and `total` are set once the refresh has
+    counted its profiles, and the bar fills as it checks them. Without them the bar only shows
+    that the refresh is waiting or working."""
+
+    label: str
+    done: int | None = None
+    total: int | None = None
+
+
+@dataclass(frozen=True)
 class RefreshStatus:
     """`state` is "queued" or "running" while a refresh is pending, else "idle". `job` is the
     newest refresh job and `run` its `RefreshRun`, when it has one."""
@@ -48,6 +65,23 @@ class RefreshStatus:
     @property
     def busy(self) -> bool:
         return self.state != IDLE
+
+    @property
+    def progress(self) -> Progress | None:
+        """The bar while a refresh is pending, from the steps its run has recorded; None when
+        none is."""
+        if self.state == "queued":
+            return Progress(QUEUED_LABEL)
+        if self.state != "running":
+            return None
+        if self.run is None:  # picked up, and its run not written yet
+            return Progress(STARTING_LABEL)
+        total = self.run.profiles_total
+        if total is None:  # the Steam sync comes before the profiles are counted
+            return Progress(STEAM_LABEL)
+        if total == 0:
+            return Progress(PROFILES_LABEL)
+        return Progress(PROFILES_LABEL, min(self.run.profiles_checked, total), total)
 
     @property
     def _details(self) -> list[dict]:

@@ -997,3 +997,109 @@ def test_migration_0006_keeps_existing_versions_and_adds_the_key(tmp_path):
         assert conn.execute(text("select count(*) from profile_version")).scalar() == 1
     assert "refresh_run" not in tables
     engine.dispose()
+
+
+# --- progress --------------------------------------------------------------------
+
+
+def cite_the_first_ref(prompt: str) -> str:
+    """A valid reply for any batch: one stated line citing the batch's first review."""
+    ref = int(re.search(r"\bR(\d+)\b", prompt)[1])
+    return profile_reply(
+        loved=[{"text": "ok", "tag": "stated", "reviews": [ref], "games": []}]
+    )
+
+
+def test_the_run_saves_its_progress_as_it_goes(
+    app, db, games, people, saved_ai_setup, fake_ai
+):
+    sam, alex, crew = people
+    review(db, 10, "solo")
+    review(db, 20, "trio", lane=Lane.THREE_FOUR, named_group_id=crew.id)
+    seen = []
+
+    def reply(prompt):
+        # What a status poll would read while this profile waits on the model.
+        with app.state.session_factory() as other:
+            row = other.scalars(select(RefreshRun)).one()
+            seen.append((row.profiles_total, row.profiles_checked))
+        return cite_the_first_ref(prompt)
+
+    fake_ai.replies["sample-local"] = reply
+    run = refresh(app, db)
+    # Solo, Three to four and the group: each is counted once it has been checked.
+    assert seen == [(3, 0), (3, 1), (3, 2)]
+    assert (run.profiles_total, run.profiles_checked) == (3, 3)
+
+
+def test_a_profile_with_nothing_new_is_counted_as_checked(
+    app, db, games, saved_ai_setup, fake_ai
+):
+    review(db, 10, "solo")
+    fake_ai.replies["sample-local"] = cite_the_first_ref
+    refresh(app, db)
+    run = refresh(app, db)
+    assert (run.profiles_total, run.profiles_checked) == (1, 1)
+    assert run.details == []
+
+
+def test_a_refresh_with_no_reviews_has_no_profiles_to_check(
+    app, db, saved_ai_setup, fake_ai
+):
+    run = refresh(app, db)
+    assert (run.profiles_total, run.profiles_checked) == (0, 0)
+
+
+def test_a_refresh_stopped_by_a_missing_setup_says_how_far_it_got(
+    app, db, games, fake_ai
+):
+    review(db, 10, "solo")
+    review(db, 20, "duo", lane=Lane.TWO)
+    run = refresh(app, db)
+    assert (run.profiles_total, run.profiles_checked) == (2, 1)
+
+
+def test_a_new_run_has_not_counted_its_profiles_yet(db):
+    job = enqueue_job(db, "refresh", "user", FIXED_NOW)
+    run = RefreshRun(job_id=job.id, started_at=FIXED_NOW)
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    assert (run.profiles_total, run.profiles_checked) == (None, 0)
+
+
+def test_migration_0007_adds_the_progress_to_existing_runs(tmp_path):
+    db_path = tmp_path / "old.db"
+    url = f"sqlite:///{db_path.as_posix()}"
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS_DIR).replace("%", "%%"))
+    config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(config, "0006")
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "insert into job (kind, status, requested_by, created_at)"
+                " values ('refresh', 'done', 'user', '2026-01-15 12:00:00')"
+            )
+        )
+        conn.execute(
+            text(
+                "insert into refresh_run (job_id, started_at)"
+                " values (1, '2026-01-15 12:00:00')"
+            )
+        )
+    command.upgrade(config, "head")
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("select profiles_total, profiles_checked from refresh_run")
+        ).one()
+    assert tuple(row) == (None, 0)
+    command.downgrade(config, "0006")
+    with engine.connect() as conn:
+        columns = {
+            column[1] for column in conn.execute(text("pragma table_info(refresh_run)"))
+        }
+        assert conn.execute(text("select count(*) from refresh_run")).scalar() == 1
+    assert "profiles_total" not in columns and "profiles_checked" not in columns
+    engine.dispose()

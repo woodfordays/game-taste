@@ -613,3 +613,95 @@ def test_a_page_with_no_version_reloads_when_the_refresh_ends(onboarded_client):
     assert 'id="profile-body"' in empty and 'hx-get=""' in empty
     assert 'hx-trigger="profiles-refreshed from:body"' in empty
     assert 'hx-select="#profile-body"' in empty and 'hx-swap="outerHTML"' in empty
+
+
+# --- the progress bar ---------------------------------------------------------
+
+
+def progress_run(db, job, total=None, checked=0, steam_summary=""):
+    """The run of a refresh that is still going, as far as it has got."""
+    db.add(
+        RefreshRun(
+            job_id=job.id,
+            started_at=FIXED_NOW,
+            steam_summary=steam_summary,
+            profiles_total=total,
+            profiles_checked=checked,
+        )
+    )
+    db.commit()
+
+
+def progress_bar(text):
+    """The progress bar's element, or None when the status shows none."""
+    found = re.search(r'<div[^>]*role="progressbar".*?</div>\s*</div>', text, re.S)
+    return found[0] if found else None
+
+
+def bar_text(bar):
+    return " ".join(re.sub(r"<[^>]+>", " ", bar).split())
+
+
+def test_a_queued_refresh_shows_a_bar_that_is_waiting(onboarded_client, db):
+    queued_job(db)
+    bar = progress_bar(status_text(onboarded_client))
+    assert bar and "is-indeterminate" in bar and "aria-valuenow" not in bar
+    assert bar_text(bar) == "Refresh queued."
+
+
+def test_a_refresh_that_just_started_shows_a_moving_bar(onboarded_client, db):
+    running_job(db)
+    bar = progress_bar(status_text(onboarded_client))
+    assert "is-indeterminate" in bar and bar_text(bar) == "Refreshing profiles."
+
+
+def test_the_steam_sync_shows_a_moving_bar(onboarded_client, db):
+    progress_run(db, running_job(db))
+    bar = progress_bar(status_text(onboarded_client))
+    assert "is-indeterminate" in bar and "aria-valuenow" not in bar
+    assert bar_text(bar) == "Syncing your Steam library."
+
+
+def test_the_profiles_fill_the_bar_as_they_are_checked(onboarded_client, db):
+    progress_run(db, running_job(db), total=5, checked=2, steam_summary="Steam synced.")
+    bar = progress_bar(status_text(onboarded_client))
+    assert "is-indeterminate" not in bar
+    assert 'aria-valuemin="0"' in bar and 'aria-valuemax="5"' in bar
+    assert 'aria-valuenow="2"' in bar and 'aria-valuetext="2 of 5"' in bar
+    assert 'style="width: 40.0%"' in bar
+    assert bar_text(bar) == "Updating profiles. 2 of 5"
+
+
+def test_a_bar_never_runs_past_full(onboarded_client, db):
+    progress_run(db, running_job(db), total=2, checked=3)
+    bar = progress_bar(status_text(onboarded_client))
+    assert 'aria-valuenow="2"' in bar and 'style="width: 100.0%"' in bar
+
+
+def test_no_profiles_to_check_shows_a_moving_bar(onboarded_client, db):
+    progress_run(db, running_job(db), total=0)
+    bar = progress_bar(status_text(onboarded_client))
+    assert "is-indeterminate" in bar and bar_text(bar) == "Updating profiles."
+
+
+def test_an_idle_status_has_no_bar(onboarded_client, db):
+    assert progress_bar(status_text(onboarded_client)) is None
+    job = running_job(db)
+    progress_run(db, job, total=3, checked=3)
+    set_job(db, job, status="done", finished_at=FIXED_NOW)
+    assert progress_bar(status_text(onboarded_client)) is None
+
+
+def test_the_bar_is_the_ember_progress_component(onboarded_client, db):
+    progress_run(db, running_job(db), total=4, checked=1)
+    bar = progress_bar(status_text(onboarded_client))
+    assert 'class="em-progress em-progress--ember' in bar
+    assert '<div class="em-progress__track"><span class="em-progress__fill"' in bar
+    assert 'aria-label="Updating profiles."' in bar
+
+
+def test_every_page_with_the_status_shows_the_bar(onboarded_client, db):
+    progress_run(db, running_job(db), total=4, checked=1)
+    for url in ("/settings", "/profiles", "/profiles/lane/solo"):
+        bar = progress_bar(html.unescape(onboarded_client.get(url).text))
+        assert bar and "1 of 4" in bar, url

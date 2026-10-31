@@ -330,7 +330,11 @@ class RefreshRun(Base):
     was updated. `details` is a list of `{"key", "label", "outcome", "versions", "message"}`:
     the outcome is "updated", "failed" or "skipped" (the refresh doesn't use "skipped" yet),
     `versions` are the version numbers the refresh saved, and `message` is the changelog line
-    of the newest one, or why the profile wasn't updated."""
+    of the newest one, or why the profile wasn't updated.
+
+    `profiles_total` and `profiles_checked` are the progress bar while it runs: how many
+    profiles it will look at (None until it has counted them, after the Steam sync) and how
+    many it has finished with, including those that had nothing new."""
 
     __tablename__ = "refresh_run"
 
@@ -342,3 +346,5 @@ class RefreshRun(Base):
     profiles_updated: Mapped[int] = mapped_column(server_default="0")
     profiles_failed: Mapped[int] = mapped_column(server_default="0")
     details: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]")
+    profiles_total: Mapped[int | None]
+    profiles_checked: Mapped[int] = mapped_column(server_default="0")
