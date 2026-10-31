@@ -4,3 +4,4 @@ services:
     ports: ["8420:8000"]
     volumes: ["./data:/data"]
     restart: unless-stopped
+    extra_hosts: ["host.docker.internal:host-gateway"]
