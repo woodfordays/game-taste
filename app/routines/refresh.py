@@ -31,6 +31,7 @@ from app.prompts import Prompt, load_prompt
 from app.services.ai import Job, StructuredReplyError, complete_json
 from app.services.library import steam_credentials, sync_library
 from app.services.profiles import (
+    LINE_SECTIONS,
     ProfileTarget,
     ProfileUpdate,
     current_version,
@@ -204,12 +205,18 @@ def _update_profile(
             batch_appids = {item["appid"] for item in reviews}
             learned_ids, learned_appids = profile_sources(db, profile)
             latest = current_version(db, profile)
+            current = latest.content if latest else None
             context = {
                 "profile_label": target.label,
                 "kind": target.kind,
                 "members": members,
-                "current": _profile_json(latest.content) if latest else None,
+                "current": _profile_json(current) if current else None,
                 "reviews": reviews,
+                # The games a stated or observed line may cite: the ones in these reviews and
+                # the ones the current profile's stated and observed lines already cite.
+                "reviewed_appids": sorted(
+                    batch_appids | _games_cited(current, {"stated", "observed"})
+                ),
                 "play_history": history,
                 "today": today,
             }
@@ -232,7 +239,10 @@ def _update_profile(
                 update,
                 review_ids=learned_ids | set(batch_ids),
                 reviewed_appids=learned_appids | batch_appids,
-                history_appids=history_appids,
+                # A guess the profile already holds may keep the games it cites, though one may
+                # have dropped out of the play history since. Without this the model, told to
+                # keep the line, would fail the check on every refresh.
+                history_appids=history_appids | _games_cited(current, {"guess"}),
             )
             if problems:
                 result.outcome = FAILED
@@ -250,6 +260,19 @@ def _update_profile(
             result.outcome = UPDATED
             result.versions.append(saved.version)
             result.message = update.changelog
+
+
+def _games_cited(content: dict | None, tags: set[str]) -> set[int]:
+    """The appids cited by the lines of a profile's content that carry one of `tags`."""
+    if not content:
+        return set()
+    return {
+        appid
+        for section in LINE_SECTIONS
+        for line in content.get(section, [])
+        if line["tag"] in tags
+        for appid in line["games"]
+    }
 
 
 def _member_names(db: Session, group_id: int | None) -> list[str]:
