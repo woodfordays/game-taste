@@ -70,9 +70,13 @@ Your data is kept. Updates to the database are applied when the app starts.
 
 ## Development
 
+Python 3.12 or newer is required.
+
 ```bash
-pip install -e .[dev]
+pip install -c constraints.txt -e ".[dev]"
 pytest
 ```
+
+`constraints.txt` pins the versions of the runtime dependencies. The Docker image installs exactly those, and the `-c` flag makes your install match.
 
 The tests fake every Steam, AI and Tavily call, so they need no network and no keys.
