@@ -82,6 +82,11 @@ def hours(minutes: int | None) -> str:
     return f"{(minutes or 0) / 60:,.1f} h"
 
 
+def whole_hours(minutes: int | None) -> str:
+    """Playtime in whole hours with a thousands separator ("1,100"), half an hour rounding up."""
+    return f"{int((minutes or 0) / 60 + 0.5):,}"
+
+
 def lane_label(lane: str) -> str:
     key = getattr(lane, "value", lane)
     return LANE_LABELS.get(key, key)
@@ -94,6 +99,7 @@ def _when_filter(context, dt: datetime) -> str:
 
 templates.env.filters["when"] = _when_filter
 templates.env.filters["hours"] = hours
+templates.env.filters["whole_hours"] = whole_hours
 templates.env.filters["lane_label"] = lane_label
 templates.env.globals["artwork_url"] = artwork_url
 

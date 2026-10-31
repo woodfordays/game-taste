@@ -22,6 +22,12 @@ def card(text: str, appid: int) -> str:
     return found[0]
 
 
+def recent_list(text: str) -> str:
+    """The "Recently played" section, or "" when the page has none."""
+    found = re.search(r'<section aria-labelledby="recent-title">.*?</section>', text, re.S)
+    return found[0] if found else ""
+
+
 def card_ids(text: str) -> list[int]:
     return [int(n) for n in re.findall(r'<li[^>]*id="card-(\d+)"', text)]
 
@@ -234,16 +240,16 @@ def test_empty_state_skips_games_that_are_not_owned_or_never_played(
     add_game(db, 1, "Never Played")
     add_game(db, 2, "Borrowed", owned=False, last_played_at=FIXED_NOW)
     add_game(db, 3, "Played One", last_played_at=FIXED_NOW)
-    text = page(onboarded_client)
-    assert "Played One" in text
-    assert "Never Played" not in text and "Borrowed" not in text
+    recent = recent_list(page(onboarded_client))
+    assert "Played One" in recent
+    assert "Never Played" not in recent and "Borrowed" not in recent
 
 
 def test_empty_state_without_played_games_lists_nothing(onboarded_client, db):
     add_game(db, 1, "Never Played")
     text = page(onboarded_client)
     assert "Tell me about a game you played recently" in text
-    assert "Write a review" not in text and "Never Played" not in text
+    assert "Write a review" not in text and recent_list(text) == ""
 
 
 def test_empty_state_with_no_games_at_all(onboarded_client):

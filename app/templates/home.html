@@ -1,9 +1,56 @@
 {% extends "base.html" %}
-{#- Home. Context: `cards` (a pair of a game and its card summary for each game switched on as Currently playing) and `recent`
-    (when there are no cards: the owned games played most recently, up to five, each with a button that opens its review dialog). -#}
+{% from "partials/art.html" import game_art %}
+{#- Home. Context: `stats` (a LibraryStats: what the library and the published reviews add up to), `cards` (a pair of a game and
+    its card summary for each game switched on as Currently playing) and `recent` (when there are no cards: the owned games played
+    most recently, up to five, each with a button that opens its review dialog). The stats are left out while there is nothing to count. -#}
 {% block title %}Home - Game Taste{% endblock %}
 {% block content %}
 <h1 class="home-title text-headline">Home</h1>
+
+{% if not stats.is_empty %}
+<section class="home-stats" aria-label="Your numbers">
+  <ul class="home-stats__list">
+    <li class="home-stat em-card">
+      <div class="em-stat">
+        <p class="em-stat__label text-label">Games reviewed</p>
+        <p class="em-stat__value"><span class="text-metric">{{ stats.games_reviewed }}</span></p>
+        <p class="em-stat__delta text-caption">
+          {%- if stats.reviews_published %}{{ stats.reviews_published }} {{ "review" if stats.reviews_published == 1 else "reviews" }} published
+          {%- else %}No reviews published yet{% endif -%}
+        </p>
+      </div>
+    </li>
+    <li class="home-stat em-card">
+      <div class="em-stat">
+        <p class="em-stat__label text-label">Play time</p>
+        <p class="em-stat__value"><span class="text-metric">{{ stats.play_minutes | whole_hours }}</span><span class="em-stat__unit text-body">h</span></p>
+        <p class="em-stat__delta text-caption">across {{ stats.played_games }} {{ "game" if stats.played_games == 1 else "games" }}</p>
+      </div>
+    </li>
+    <li class="home-stat em-card">
+      <div class="em-stat">
+        <p class="em-stat__label text-label">Average rating</p>
+        {%- if stats.average_rating is not none %}
+        <p class="em-stat__value"><span class="text-metric">{{ "%.1f" | format(stats.average_rating) }}</span><span class="em-stat__unit text-body">/ 10</span></p>
+        <p class="em-stat__delta text-caption">from {{ stats.rated_reviews }} {{ "rating" if stats.rated_reviews == 1 else "ratings" }}</p>
+        {%- else %}
+        <p class="em-stat__value"><span class="home-stat__text text-subtitle">Not rated yet</span></p>
+        <p class="em-stat__delta text-caption">Add a rating to a review</p>
+        {%- endif %}
+      </div>
+    </li>
+    {%- if stats.most_played %}
+    <li class="home-stat em-card">
+      <div class="em-stat">
+        <p class="em-stat__label text-label">Most played</p>
+        <p class="em-stat__value"><span class="home-stat__text text-subtitle">{{ stats.most_played.name }}</span></p>
+        <p class="em-stat__delta text-caption">{{ stats.most_played.playtime_minutes | hours }}</p>
+      </div>
+    </li>
+    {%- endif %}
+  </ul>
+</section>
+{% endif %}
 
 {% if cards %}
 <section aria-labelledby="playing-title">
@@ -27,7 +74,7 @@
   <ul class="library-rows">
     {%- for game in recent %}
     <li class="library-row">
-      <img class="library-row__art" src="{{ artwork_url(game.appid) }}" alt="" width="120" height="56" loading="lazy" referrerpolicy="no-referrer">
+      {{ game_art(game, "library-row__art", 120, 56) }}
       <div class="library-row__main">
         <p class="library-row__name text-subtitle">{{ game.name }}</p>
         <p class="library-row__meta text-caption">

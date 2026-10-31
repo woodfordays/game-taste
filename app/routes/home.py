@@ -1,4 +1,4 @@
-"""Home: a card for each game being played, and what to show before there is one."""
+"""Home: your numbers, a card for each game being played, and what to show before there is one."""
 
 from typing import NamedTuple
 
@@ -12,6 +12,7 @@ from app.models import Game
 from app.routes.reviews import AppId
 from app.services.library import SORT_KEYS
 from app.services.reviews import CardSummary, card_summary
+from app.services.stats import library_stats
 from app.web import render
 
 router = APIRouter()
@@ -45,7 +46,14 @@ def home(request: Request, db: Session = Depends(get_db)):
                 .limit(RECENT_COUNT)
             )
         )
-    return render(request, "home.html", nav="home", cards=cards, recent=recent)
+    return render(
+        request,
+        "home.html",
+        nav="home",
+        stats=library_stats(db),
+        cards=cards,
+        recent=recent,
+    )
 
 
 @router.get("/games/{appid}/card")
