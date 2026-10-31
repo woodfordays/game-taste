@@ -1,12 +1,16 @@
 {#- One provider's inputs in the AI form. `row` is a ProviderRow. The hidden `providers` input is how the server
-    learns the row exists. Removing a row only removes it from the form; nothing saved is deleted. -#}
+    learns the row exists. Removing a row only removes it from the form; nothing saved is deleted. Settings doesn't
+    offer it for a saved provider (removing one is not something saving can do), only for a row added this time. -#}
 {% from "partials/field.html" import field %}
 {% set local = row.kind.value == "local" %}
+{% set removable = not (mode | default("onboarding") == "settings" and row.saved) %}
 <div id="provider-{{ row.kind.value }}" class="ai-provider" data-provider-row>
   <input type="hidden" name="providers" value="{{ row.kind.value }}">
   <div class="ai-provider__head">
     <h3 class="text-subtitle ai-provider__name">{{ row.label }}</h3>
+    {% if removable %}
     <button type="button" class="em-btn em-btn--ghost em-btn--sm text-label" aria-label="Remove {{ row.label }}" onclick="this.closest('[data-provider-row]').remove()"><span class="em-btn__label">Remove</span></button>
+    {% endif %}
   </div>
   {% if local %}
   {{ field("url-local", "url_local", "Server URL", type="url", value=row.url, placeholder="http://localhost:1234/v1", hint="Most local servers end in /v1.", autocomplete="off", mono=true) }}

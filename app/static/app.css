@@ -983,3 +983,142 @@
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-4);
 }
+
+/* Settings: five cards, each with a form of its own. */
+.settings-title {
+  margin: 0 0 var(--space-6);
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-5);
+  max-width: 480px;
+}
+
+.settings-form .em-field,
+.settings-form .em-alert {
+  align-self: stretch;
+}
+
+.settings-status,
+.settings-note {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-note {
+  color: var(--ink-muted);
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.settings-actions > p {
+  margin: 0;
+}
+
+/* Change password, then log out apart from it. */
+.settings-account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.settings-logout {
+  margin: 0;
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--line);
+}
+
+/* People and groups. A row is a name and a button that opens its forms; hairlines separate rows. */
+.settings-people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.settings-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.settings-block > h3 {
+  margin: 0;
+}
+
+.settings-block .people-form {
+  max-width: 480px;
+}
+
+.settings-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.settings-row {
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-row__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+.settings-row__head::-webkit-details-marker {
+  display: none;
+}
+
+.settings-row__head:hover > .em-btn {
+  background: var(--surface-hover);
+}
+
+.settings-row__head:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--focus-ring);
+}
+
+.settings-row__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-row__name,
+.settings-row__meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-row__meta {
+  color: var(--ink-muted);
+}
+
+.settings-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 480px;
+  padding: var(--space-2) 0 var(--space-5);
+}

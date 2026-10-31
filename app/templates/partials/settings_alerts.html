@@ -1,0 +1,29 @@
+{#- The two notices a Settings section can show at its top. The text is plain and goes through Jinja's escaping, never marked
+    safe: it can quote what the user typed or what Steam said. -#}
+
+{#- Something saved. `message` says what. -#}
+{% macro saved_alert(message) %}
+<div class="em-alert em-alert--success" role="status">
+  <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
+  <div class="em-alert__content">
+    <p class="em-alert__title text-label">Saved</p>
+    <div class="em-alert__body text-body">
+      <p>{{ message }}</p>
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
+{#- Something that failed: what happened, then what to do. -#}
+{% macro failed_alert(title, message, advice) %}
+<div class="em-alert em-alert--danger" role="alert">
+  <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
+  <div class="em-alert__content">
+    <p class="em-alert__title text-label">{{ title }}</p>
+    <div class="em-alert__body text-body">
+      <p>{{ message }}</p>
+      <p>{{ advice }}</p>
+    </div>
+  </div>
+</div>
+{% endmacro %}

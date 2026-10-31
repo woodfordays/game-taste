@@ -16,6 +16,7 @@ from app.routes import home as home_routes
 from app.routes import library as library_routes
 from app.routes import onboarding as onboarding_routes
 from app.routes import reviews as review_routes
+from app.routes import settings as settings_routes
 from app.services.ai import Adapter, ProviderConfig, make_adapter
 from app.services.search import SearchClient, make_search_client
 from app.services.secrets import (
@@ -74,6 +75,7 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
     app.include_router(home_routes.router)
     app.include_router(library_routes.router)
     app.include_router(review_routes.router)
+    app.include_router(settings_routes.router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     return app

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{#- Settings: everything onboarding set, in five cards in a fixed order, each with a form and a save button of its own. A save
+    swaps only its own card's form (see the partials), so what is typed in another card is left alone. Every button is
+    secondary: nothing here is the one thing to do next.
+    Context: `form`, `mode`, `form_action` and `row_url` for the AI form; `steam`, `roster`, `schedule` and `account` for the
+    other sections. -#}
+{% block title %}Settings - Game Taste{% endblock %}
+{% block content %}
+<h1 class="text-headline settings-title">Settings</h1>
+
+<div class="settings">
+
+  <section class="em-card" aria-labelledby="settings-ai-title">
+    <header class="em-card__header">
+      <div class="em-card__titles">
+        <h2 id="settings-ai-title" class="em-card__title text-title">AI and search</h2>
+        <p class="em-card__desc text-caption">Providers, the model for each job and the web search key. Saving tests every connection first and saves only if all of them work. A key left empty stays as saved.</p>
+      </div>
+    </header>
+    <div class="em-card__body">
+      {% include "partials/ai_form.html" %}
+    </div>
+  </section>
+
+  <section class="em-card" aria-labelledby="settings-steam-title">
+    <header class="em-card__header">
+      <div class="em-card__titles">
+        <h2 id="settings-steam-title" class="em-card__title text-title">Steam</h2>
+        <p class="em-card__desc text-caption">Your Web API key and profile import your library. The store region sets the prices Steam store search shows.</p>
+      </div>
+    </header>
+    <div class="em-card__body">
+      {% include "partials/settings_steam.html" %}
+    </div>
+  </section>
+
+  <section class="em-card" aria-labelledby="settings-people-title">
+    <header class="em-card__header">
+      <div class="em-card__titles">
+        <h2 id="settings-people-title" class="em-card__title text-title">People and groups</h2>
+        <p class="em-card__desc text-caption">The names a review can say it was played with. Add, rename and regroup them here.</p>
+      </div>
+    </header>
+    <div class="em-card__body">
+      {% include "partials/settings_people.html" %}
+    </div>
+  </section>
+
+  <section class="em-card" aria-labelledby="settings-schedule-title">
+    <header class="em-card__header">
+      <div class="em-card__titles">
+        <h2 id="settings-schedule-title" class="em-card__title text-title">Schedule</h2>
+        <p class="em-card__desc text-caption">When the daily refresh runs, and the timezone the app shows times in.</p>
+      </div>
+    </header>
+    <div class="em-card__body">
+      {% include "partials/settings_schedule.html" %}
+    </div>
+  </section>
+
+  <section class="em-card" aria-labelledby="settings-account-title">
+    <header class="em-card__header">
+      <div class="em-card__titles">
+        <h2 id="settings-account-title" class="em-card__title text-title">Account</h2>
+        <p class="em-card__desc text-caption">Change your password, or log out of this browser.</p>
+      </div>
+    </header>
+    <div class="em-card__body settings-account">
+      {% include "partials/settings_password.html" %}
+      {#- A plain post, not htmx: logging out changes the whole page. -#}
+      <form class="settings-logout" method="post" action="/logout">
+        <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Log out</span></button>
+      </form>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

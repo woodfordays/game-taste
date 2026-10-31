@@ -10,8 +10,14 @@ from sqlalchemy.orm import Session
 
 from app.models import CurrentlyPlayingChange, Game, PlaytimeSnapshot, Review
 from app.services.secrets import Vault
-from app.services.settings import get_secret, get_setting, set_secret, set_setting
-from app.services.steam import SteamClient
+from app.services.settings import (
+    STORE_REGION_SETTING,
+    get_secret,
+    get_setting,
+    set_secret,
+    set_setting,
+)
+from app.services.steam import SteamClient, SteamError
 
 STEAM_KEY_SETTING = "steam_api_key"
 STEAM_ID_SETTING = "steam_id"
@@ -116,6 +122,64 @@ def steam_credentials(db: Session, vault: Vault) -> tuple[str, str] | None:
     if not api_key or not steamid:
         return None
     return api_key, steamid
+
+
+@dataclass
+class SteamSave:
+    """What saving the Steam settings came to. Nothing is saved unless `ok`.
+
+    `key_error` and `profile_error` name a field left empty with nothing saved to fall
+    back on. `error` is what Steam said when it refused. `synced` is the import, or None
+    when only the store region was saved.
+    """
+
+    key_error: str | None = None
+    profile_error: str | None = None
+    error: str | None = None
+    synced: SyncResult | None = None
+
+    @property
+    def ok(self) -> bool:
+        return not (self.key_error or self.profile_error or self.error)
+
+
+def save_steam_settings(
+    db: Session,
+    vault: Vault,
+    steam: SteamClient,
+    *,
+    api_key: str,
+    profile: str,
+    region: str,
+    now: datetime,
+) -> SteamSave:
+    """Save the Steam section of Settings: the store region, and the connection when asked.
+
+    `region` must already be valid (see `parse_region`). A blank `api_key` keeps the
+    saved key and a blank `profile` keeps the saved SteamID. With both blank only the
+    region is saved, whether or not Steam is connected. Otherwise Steam is connected
+    again with whatever is typed over what is saved (`connect_steam`), and the region is
+    saved with it. If that can't be done, nothing is saved, the region included.
+    """
+    api_key, profile = api_key.strip(), profile.strip()
+    if not api_key and not profile:
+        set_setting(db, STORE_REGION_SETTING, region)
+        return SteamSave()
+
+    saved = steam_credentials(db, vault)
+    api_key = api_key or (saved[0] if saved else "")
+    profile = profile or (saved[1] if saved else "")
+    if not api_key or not profile:
+        return SteamSave(
+            key_error=None if api_key else KEY_MISSING,
+            profile_error=None if profile else PROFILE_MISSING,
+        )
+    try:
+        synced = connect_steam(db, vault, steam, api_key, profile, now)
+    except SteamError as failure:
+        return SteamSave(error=str(failure))
+    set_setting(db, STORE_REGION_SETTING, region)
+    return SteamSave(synced=synced)
 
 
 def _by_name(game: Game) -> tuple[str, int]:

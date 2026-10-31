@@ -1,0 +1,21 @@
+{#- The Schedule section of Settings. A save swaps this whole form, so it carries its own notice and errors.
+    Context: `schedule`, a ScheduleView: `refresh_time` and `timezone` (the fields' values), `timezone_options` (every zone as a
+    pair of value and label), `timezone_placeholder` (set when `timezone` is not on the list, so none is picked quietly),
+    `time_error` and `timezone_error` (a field's problem, either may be none) and `saved`. -#}
+{% from "partials/field.html" import field, select_field %}
+{% from "partials/settings_alerts.html" import saved_alert %}
+<form id="settings-schedule" class="settings-form" method="post" action="/settings/schedule"
+  hx-post="/settings/schedule" hx-target="#settings-schedule" hx-swap="outerHTML" hx-disabled-elt="find button">
+
+  {% if schedule.saved %}
+  {{ saved_alert("Schedule saved.") }}
+  {% endif %}
+
+  {{ field("refresh-time", "refresh_time", "Refresh time", value=schedule.refresh_time, error=schedule.time_error, hint="Use 24-hour time, like 04:00. The daily refresh runs at this time.", autocomplete="off", autofocus=schedule.time_error, mono=true) }}
+
+  {{ select_field("schedule-timezone", "timezone", "Timezone", schedule.timezone_options, selected=schedule.timezone, placeholder=schedule.timezone_placeholder, error=schedule.timezone_error, hint="Times in the app and the refresh time use this timezone.", required=true) }}
+
+  <div class="settings-actions">
+    <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Save schedule</span></button>
+  </div>
+</form>

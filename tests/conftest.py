@@ -3,13 +3,14 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
-from fakes import FakeAdapterFactory, FakeSearchFactory, FakeSteam
+from fakes import VALID, FakeAdapterFactory, FakeSearchFactory, FakeSteam
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from app.auth import advance_step
 from app.main import Services, create_app
 from app.models import Game
+from app.services.ai_setup import AiSetup, parse_ai_form, save_ai_setup
 from app.services.library import sync_library
 from app.services.people import add_group, add_person
 from app.services.secrets import hash_password
@@ -170,3 +171,14 @@ def people(db):
     alex = add_person(db, "Alex", FIXED_NOW)
     crew = add_group(db, "Sample Crew", [sam.id, alex.id], FIXED_NOW)
     return sam, alex, crew
+
+
+@pytest.fixture
+def saved_ai_setup(db, app):
+    """The `VALID` AI setup saved, as a finished onboarding leaves it: Anthropic (key
+    `ant-sample`) and Local, a model for each job, and the Tavily key `tvly-sample`."""
+    blank = AiSetup(providers={}, jobs={}, tavily_key="")
+    setup, errors = parse_ai_form(VALID, blank)
+    assert errors == []
+    save_ai_setup(db, app.state.vault, setup, now=FIXED_NOW)
+    return setup

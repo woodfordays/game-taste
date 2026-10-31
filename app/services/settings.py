@@ -1,3 +1,4 @@
+import re
 import zoneinfo
 from functools import lru_cache
 
@@ -52,3 +53,42 @@ def delete_setting(db: Session, key: str) -> None:
 def known_timezones() -> frozenset[str]:
     """The names a timezone setting may take."""
     return frozenset(zoneinfo.available_timezones())
+
+
+# --- the values Settings lets the user change ---------------------------------
+
+STORE_REGION_SETTING = "store_region"
+REFRESH_TIME_SETTING = "refresh_time"
+TIMEZONE_SETTING = "timezone"
+
+DEFAULT_STORE_REGION = "us"
+DEFAULT_REFRESH_TIME = "04:00"
+DEFAULT_TIMEZONE = "UTC"
+
+# Plain character classes, not \d: that would also take digits from other scripts.
+_REGION = re.compile(r"[a-z]{2}")
+_REFRESH_TIME = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")
+
+
+def parse_region(text: str) -> str | None:
+    """The two-letter store region in `text`, lowercase, or None when it isn't one.
+
+    Spaces around it are ignored and any case is taken ("GB" is "gb").
+    """
+    text = text.strip()
+    if not text.isascii():
+        return None
+    region = text.lower()
+    return region if _REGION.fullmatch(region) else None
+
+
+def parse_refresh_time(text: str) -> str | None:
+    """The refresh time in `text` as "HH:MM" on a 24-hour clock, or None."""
+    time = text.strip()
+    return time if _REFRESH_TIME.fullmatch(time) else None
+
+
+def parse_timezone(text: str) -> str | None:
+    """The timezone name in `text`, or None when it isn't one `known_timezones` lists."""
+    name = text.strip()
+    return name if name in known_timezones() else None

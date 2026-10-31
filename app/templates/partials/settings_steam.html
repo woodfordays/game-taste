@@ -1,0 +1,36 @@
+{#- The Steam section of Settings. A save swaps this whole form, so it carries its own notices and errors.
+    Context: `steam`, a SteamView: `steam_id` (the saved SteamID64, or none) and `key_hint` ("Saved key ending in abcd", or empty)
+    describe what is saved; `key`, `profile` and `region` are the fields' values; `key_error`, `profile_error`, `region_error`
+    (a field's problem), `error` (what Steam said) and `saved` (what a save did) may be none. The saved key is never rendered. -#}
+{% from "partials/field.html" import field %}
+{% from "partials/settings_alerts.html" import saved_alert, failed_alert %}
+<form id="settings-steam" class="settings-form" method="post" action="/settings/steam"
+  hx-post="/settings/steam" hx-target="#settings-steam" hx-swap="outerHTML" hx-disabled-elt="find button">
+
+  {% if steam.error %}
+  {{ failed_alert("Steam settings weren't saved", steam.error, "Nothing was saved. Check the details below and try again.") }}
+  {% elif steam.saved %}
+  {{ saved_alert(steam.saved) }}
+  {% endif %}
+
+  {% if steam.steam_id %}
+  <p class="settings-status text-body">Connected as {{ steam.steam_id }}.</p>
+  {% else %}
+  <p class="settings-status text-body">Steam isn't connected. Add your key and profile to import your library.</p>
+  {% endif %}
+
+  {#- new-password keeps browsers from filling the login password into a key field. -#}
+  {{ field("steam-key", "steam_key", "Steam Web API key", type="password", value=steam.key, placeholder=steam.key_hint, error=steam.key_error, hint=("Leave this empty to keep the saved key." if steam.key_hint else "Create one at steamcommunity.com/dev/apikey."), autocomplete="new-password", required=false, autofocus=steam.key_error, mono=true) }}
+
+  {{ field("steam-profile", "steam_profile", "Steam profile link or SteamID64", value=steam.profile, error=steam.profile_error, hint=("Leave this empty to keep your current profile, or paste a link, a custom URL name or a 17-digit SteamID64 to change it." if steam.steam_id else "Paste your profile link, your custom URL name or your 17-digit SteamID64."), autocomplete="off", required=false, autofocus=steam.profile_error and not steam.key_error, mono=true) }}
+
+  {{ field("store-region", "store_region", "Store region", value=steam.region, error=steam.region_error, hint="Two letters, like us or gb. Steam store search uses it for prices.", autocomplete="off", autofocus=steam.region_error, mono=true) }}
+
+  <div class="settings-actions">
+    <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Save Steam settings</span></button>
+    <p class="htmx-indicator steam-importing text-caption" role="status">
+      <span class="em-spinner em-spinner--ember" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2.5"><circle class="em-spinner__track" cx="12" cy="12" r="9"/><path class="em-spinner__arc" d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg></span>
+      <span>Saving... Importing a large library can take a few seconds.</span>
+    </p>
+  </div>
+</form>

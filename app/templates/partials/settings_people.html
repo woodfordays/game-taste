@@ -1,0 +1,94 @@
+{#- The People and groups section of Settings. Every form in it swaps this whole section, because a new or renamed person also
+    changes the group lists and the add-group checkboxes. Rename and group editing sit in a row that opens on a button, and
+    the row of a refused form opens again, so its message is in view.
+    Context: `roster`, a RosterView: `people` (everyone, by name), `groups` (pairs of a group and its members) and `refused`,
+    the form that was just refused (or none): its `form`, `target` (the person's or group's id), `message` (a plain string),
+    `name` and `members` (what was typed and ticked) and `on_members` (the message belongs under the member list).
+    Names are escaped like any text. -#}
+{% from "partials/field.html" import field, field_help %}
+{% from "partials/people_forms.html" import add_person_form, add_group_form %}
+{% set refused = roster.refused %}
+{% set add_person_refused = refused and refused.form == "add_person" %}
+{% set add_group_refused = refused and refused.form == "add_group" %}
+<div id="settings-people" class="settings-people">
+
+  <section class="settings-block" aria-labelledby="people-title">
+    <h3 id="people-title" class="text-subtitle">People</h3>
+    {% if roster.people %}
+    <ul class="settings-rows">
+      {%- for person in roster.people %}
+      {% set here = refused and refused.form == "rename_person" and refused.target == person.id %}
+      <li>
+        <details id="person-row-{{ person.id }}" class="settings-row"{% if here %} open{% endif %}>
+          <summary class="settings-row__head" aria-label="Rename {{ person.name }}">
+            <span class="settings-row__name text-body">{{ person.name }}</span>
+            <span class="em-btn em-btn--ghost em-btn--sm text-label"><span class="em-btn__label">Rename</span></span>
+          </summary>
+          <div class="settings-row__body">
+            <form class="people-form" method="post" action="/settings/people/{{ person.id }}/rename"
+              hx-post="/settings/people/{{ person.id }}/rename" hx-target="#settings-people" hx-swap="outerHTML" hx-disabled-elt="find button">
+              {{ field("person-" ~ person.id ~ "-name", "name", "New name", value=(refused.name if here else person.name), error=(refused.message if here else none), autocomplete="off", autofocus=here) }}
+              <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Save name</span></button>
+            </form>
+          </div>
+        </details>
+      </li>
+      {%- endfor %}
+    </ul>
+    {% else %}
+    <p class="settings-note text-body">No one yet. Add the people you play with.</p>
+    {% endif %}
+    {{ add_person_form("/settings/people/person", "#settings-people", (refused.name if add_person_refused else ""), (refused.message if add_person_refused else none), autofocus=add_person_refused) }}
+  </section>
+
+  <section class="settings-block" aria-labelledby="groups-title">
+    <h3 id="groups-title" class="text-subtitle">Groups</h3>
+    <p class="settings-note text-body">A group is a set of people you play with together. Reviews you already wrote keep the people they were tagged with when you change a group.</p>
+    {% if roster.groups %}
+    <ul class="settings-rows">
+      {%- for group, members in roster.groups %}
+      {% set rename_here = refused and refused.form == "rename_group" and refused.target == group.id %}
+      {% set members_here = refused and refused.form == "members" and refused.target == group.id %}
+      {% set ticked = refused.members if members_here else (members | map(attribute="id") | list) %}
+      <li>
+        <details id="group-row-{{ group.id }}" class="settings-row"{% if rename_here or members_here %} open{% endif %}>
+          <summary class="settings-row__head" aria-label="Edit {{ group.name }}">
+            <span class="settings-row__main">
+              <span class="settings-row__name text-subtitle">{{ group.name }}</span>
+              <span class="settings-row__meta text-caption">{% if members %}{{ members | map(attribute="name") | join(", ") }}{% else %}No members yet.{% endif %}</span>
+            </span>
+            <span class="em-btn em-btn--ghost em-btn--sm text-label"><span class="em-btn__label">Edit</span></span>
+          </summary>
+          <div class="settings-row__body">
+            <form class="people-form" method="post" action="/settings/groups/{{ group.id }}/rename"
+              hx-post="/settings/groups/{{ group.id }}/rename" hx-target="#settings-people" hx-swap="outerHTML" hx-disabled-elt="find button">
+              {{ field("group-" ~ group.id ~ "-name", "name", "Group name", value=(refused.name if rename_here else group.name), error=(refused.message if rename_here else none), autocomplete="off", autofocus=rename_here) }}
+              <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Rename group</span></button>
+            </form>
+            <form class="people-form" method="post" action="/settings/groups/{{ group.id }}/members"
+              hx-post="/settings/groups/{{ group.id }}/members" hx-target="#settings-people" hx-swap="outerHTML" hx-disabled-elt="find button">
+              <fieldset class="people-members"{% if members_here %} aria-describedby="group-{{ group.id }}-members-error"{% endif %}>
+                <legend class="em-field__label text-label">Members</legend>
+                {%- for person in roster.people %}
+                <div class="em-check">
+                  <input id="group-{{ group.id }}-member-{{ person.id }}" type="checkbox" class="em-check__box" name="members" value="{{ person.id }}"
+                    {%- if person.id in ticked %} checked{% endif %}>
+                  <span class="em-check__text">
+                    <label for="group-{{ group.id }}-member-{{ person.id }}" class="em-check__label text-body">{{ person.name }}</label>
+                  </span>
+                </div>
+                {%- endfor %}
+                {{ field_help("group-" ~ group.id ~ "-members", none, (refused.message if members_here else none)) }}
+              </fieldset>
+              <button type="submit" class="em-btn em-btn--secondary em-btn--md text-label"><span class="em-btn__label">Save members</span></button>
+            </form>
+          </div>
+        </details>
+      </li>
+      {%- endfor %}
+    </ul>
+    {% endif %}
+    {{ add_group_form("/settings/groups/group", "#settings-people", roster.people, (refused.name if add_group_refused else ""), (refused.message if add_group_refused and not refused.on_members else none), (refused.message if add_group_refused and refused.on_members else none), (refused.members if add_group_refused else []), autofocus=add_group_refused and not refused.on_members) }}
+  </section>
+
+</div>

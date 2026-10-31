@@ -300,7 +300,6 @@ def submit_ai_form(
     vault: Vault,
     form: Mapping[str, Any],
     services: "Services",
-    *,
     now: datetime,
 ) -> AiSubmitResult:
     """Handle a posted form: parse it, test every connection, and save only if all pass.
@@ -345,6 +344,7 @@ class ProviderRow:
     label: str
     url: str  # Local only
     key: KeyField
+    saved: bool = False  # the provider is saved, so Settings doesn't offer to remove it
 
 
 @dataclass
@@ -401,6 +401,7 @@ def provider_row(kind: ProviderKind, setup: AiSetup, stored: AiSetup) -> Provide
             saved.api_key if saved else None,
             kind.value in setup.unreadable,
         ),
+        saved=saved is not None,
     )
 
 
