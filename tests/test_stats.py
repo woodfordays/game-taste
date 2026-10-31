@@ -124,6 +124,13 @@ def test_a_review_of_a_game_you_dont_own_still_counts(db):
     assert not stats.is_empty
 
 
+def test_a_newer_draft_leaves_the_published_rating_in_the_average(db, games):
+    publish(db, 10, Lane.SOLO, ReviewForm(rating=8), FIXED_NOW)
+    save_draft(db, 10, Lane.SOLO, ReviewForm(rating=2, text="second thoughts"), FIXED_NOW)
+    stats = library_stats(db)
+    assert (stats.reviews_published, stats.average_rating, stats.rated_reviews) == (1, 8.0, 1)
+
+
 def test_most_played_ties_go_to_the_name_first_alphabetically(db):
     add_game(db, 30, "Zeta Run", playtime_minutes=300)
     add_game(db, 40, "alpha Run", playtime_minutes=300)
@@ -138,7 +145,7 @@ def test_home_shows_the_stats(onboarded_client, db, games):
     publish(db, 20, Lane.SOLO, ReviewForm(rating=7), FIXED_NOW)
     strip = stats_strip(onboarded_client.get("/").text)
     assert tile(strip, "Games reviewed") == "Games reviewed 2 2 reviews published"
-    assert tile(strip, "Play time") == "Play time 12 h across 2 games"
+    assert tile(strip, "Play time") == "Play time 12.0 h across 2 games"
     assert tile(strip, "Average rating") == "Average rating 7.5 / 10 from 2 ratings"
     assert tile(strip, "Most played") == "Most played Sample Quest 10.0 h"
 
@@ -148,7 +155,7 @@ def test_home_stats_use_singular_words_for_one(onboarded_client, db):
     publish(db, 30, Lane.SOLO, ReviewForm(rating=6), FIXED_NOW)
     strip = stats_strip(onboarded_client.get("/").text)
     assert tile(strip, "Games reviewed") == "Games reviewed 1 1 review published"
-    assert tile(strip, "Play time") == "Play time 2 h across 1 game"
+    assert tile(strip, "Play time") == "Play time 1.5 h across 1 game"
     assert tile(strip, "Average rating") == "Average rating 6.0 / 10 from 1 rating"
 
 
@@ -165,7 +172,10 @@ def test_home_stats_leave_out_most_played_with_no_play_time(onboarded_client, db
     add_game(db, 30, "Never Started", playtime_minutes=0)
     strip = stats_strip(onboarded_client.get("/").text)
     assert "Most played" not in strip
-    assert tile(strip, "Play time") == "Play time 0 h across 0 games"
+    assert (
+        tile(strip, "Play time")
+        == "Play time No play time yet Steam's hours for the games you own"
+    )
 
 
 def test_home_has_no_stats_with_nothing_to_count(onboarded_client):
@@ -187,3 +197,57 @@ def test_home_stats_sit_above_the_cards(onboarded_client, db, games):
     set_currently_playing(db, 10, True, FIXED_NOW)
     text = onboarded_client.get("/").text
     assert text.index('class="home-stats"') < text.index('id="playing-title"')
+
+
+def test_a_small_play_time_is_not_rounded_away(onboarded_client, db):
+    add_game(db, 30, "Short Session", playtime_minutes=12)
+    strip = stats_strip(onboarded_client.get("/").text)
+    assert tile(strip, "Play time") == "Play time 0.2 h across 1 game"
+
+
+def test_a_long_most_played_name_can_be_read_in_full(onboarded_client, db):
+    name = "A Very Long Game Name: The Extended Edition of Many Words"
+    add_game(db, 30, name, playtime_minutes=90)
+    strip = stats_strip(onboarded_client.get("/").text)
+    assert f'title="{name}"' in strip
+
+
+# --- staying right after a publish ------------------------------------------------
+
+
+def stats_area(text: str) -> str:
+    found = re.search(r'<div id="home-stats"[^>]*>', text)
+    assert found, "no #home-stats"
+    return found[0]
+
+
+def test_the_stats_area_reloads_itself_when_a_review_is_published(onboarded_client):
+    # There even with nothing to count yet, so a first review can bring the numbers in.
+    tag = stats_area(onboarded_client.get("/").text)
+    assert 'hx-get="/"' in tag and 'hx-select="#home-stats"' in tag
+    assert 'hx-swap="outerHTML"' in tag
+    assert 'hx-trigger="reviews-changed from:body"' in tag
+
+
+def test_publishing_tells_home_to_reload_its_numbers(onboarded_client, games):
+    r = onboarded_client.post(
+        "/games/10/review/solo", data={"action": "publish", "rating": "8", "text": "Good."}
+    )
+    assert r.status_code == 200 and r.text == ""
+    events = [event.strip() for event in r.headers["HX-Trigger"].split(",")]
+    assert events == ["card-updated-10", "reviews-changed"]
+
+
+def test_saving_a_draft_leaves_the_numbers_alone(onboarded_client, games):
+    r = onboarded_client.post(
+        "/games/10/review/solo", data={"rating": "8", "text": "wip", "action": "draft"}
+    )
+    assert r.headers["HX-Trigger"] == "card-updated-10"
+
+
+def test_the_reloaded_numbers_count_the_new_review(onboarded_client, games):
+    onboarded_client.post(
+        "/games/10/review/solo", data={"action": "publish", "rating": "8", "text": "Good."}
+    )
+    strip = stats_strip(onboarded_client.get("/").text)
+    assert tile(strip, "Games reviewed") == "Games reviewed 1 1 review published"

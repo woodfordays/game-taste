@@ -120,7 +120,8 @@ def test_publish_closes_and_triggers_card(onboarded_client, db, games):
         "/games/10/review/solo",
         data={"action": "publish", "rating": "7", "text": "Fine"},
     )
-    assert r.text == "" and r.headers["HX-Trigger"] == "card-updated-10"
+    # The card refreshes, and so do Home's numbers, which a publish changes.
+    assert r.text == "" and r.headers["HX-Trigger"] == "card-updated-10, reviews-changed"
     assert history(db, 10, Lane.SOLO)[0].rating == 7
 
 

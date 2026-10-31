@@ -152,9 +152,17 @@ def _game(db: Session, appid: int) -> Game:
     return game
 
 
-def _card_event(appid: int) -> dict[str, str]:
-    """The header that tells the game's Home card to refresh."""
-    return {"HX-Trigger": f"card-updated-{appid}"}
+# Sent with every publish: Home's numbers listen for it, since a published review changes them.
+REVIEWS_CHANGED_EVENT = "reviews-changed"
+
+
+def _card_event(appid: int, *, published: bool = False) -> dict[str, str]:
+    """The header that tells the game's Home card to refresh, and after a publish Home's
+    numbers too. htmx reads a comma-separated list as one event each."""
+    events = f"card-updated-{appid}"
+    if published:
+        events += f", {REVIEWS_CHANGED_EVENT}"
+    return {"HX-Trigger": events}
 
 
 @dataclass
@@ -330,7 +338,7 @@ def review_save(
             publish(db, appid, lane, form, now)
     except ReviewError as failure:
         return _dialog(request, db, game, lane, form, error=str(failure), dirty=True)
-    return HTMLResponse("", headers=_card_event(appid))
+    return HTMLResponse("", headers=_card_event(appid, published=action != "draft"))
 
 
 @router.post("/games/{appid}/review/{lane}/switch")

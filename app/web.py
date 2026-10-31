@@ -77,14 +77,14 @@ def when(dt: datetime, now: datetime, tz: str) -> str:
     return f"{_MONTHS[local.month - 1]} {local.day}{year}, {hour}:{local.minute:02d} {meridiem}"
 
 
+def hours_value(minutes: int | None) -> str:
+    """Playtime in hours with one decimal and a thousands separator ("1,099.9")."""
+    return f"{(minutes or 0) / 60:,.1f}"
+
+
 def hours(minutes: int | None) -> str:
-    """Playtime in hours with one decimal and a thousands separator ("1,099.9 h")."""
-    return f"{(minutes or 0) / 60:,.1f} h"
-
-
-def whole_hours(minutes: int | None) -> str:
-    """Playtime in whole hours with a thousands separator ("1,100"), half an hour rounding up."""
-    return f"{int((minutes or 0) / 60 + 0.5):,}"
+    """Playtime in hours with its unit ("1,099.9 h")."""
+    return f"{hours_value(minutes)} h"
 
 
 def lane_label(lane: str) -> str:
@@ -99,7 +99,7 @@ def _when_filter(context, dt: datetime) -> str:
 
 templates.env.filters["when"] = _when_filter
 templates.env.filters["hours"] = hours
-templates.env.filters["whole_hours"] = whole_hours
+templates.env.filters["hours_value"] = hours_value
 templates.env.filters["lane_label"] = lane_label
 templates.env.globals["artwork_url"] = artwork_url
 

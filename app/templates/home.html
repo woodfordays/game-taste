@@ -2,12 +2,15 @@
 {% from "partials/art.html" import game_art %}
 {#- Home. Context: `stats` (a LibraryStats: what the library and the published reviews add up to), `cards` (a pair of a game and
     its card summary for each game switched on as Currently playing) and `recent` (when there are no cards: the owned games played
-    most recently, up to five, each with a button that opens its review dialog). The stats are left out while there is nothing to count. -#}
+    most recently, up to five, each with a button that opens its review dialog). The stats are left out while there is nothing to count.
+    #home-stats is always there, empty or not, and reloads itself from this page when a review is published here (the
+    `reviews-changed` event), so a first review brings the numbers in and later ones keep them right. -#}
 {% block title %}Home - Game Taste{% endblock %}
 {% block content %}
 <h1 class="home-title text-headline">Home</h1>
 
-{% if not stats.is_empty %}
+<div id="home-stats" hx-get="/" hx-select="#home-stats" hx-swap="outerHTML" hx-trigger="reviews-changed from:body">
+{%- if not stats.is_empty %}
 <section class="home-stats" aria-label="Your numbers">
   <ul class="home-stats__list">
     <li class="home-stat em-card">
@@ -23,8 +26,13 @@
     <li class="home-stat em-card">
       <div class="em-stat">
         <p class="em-stat__label text-label">Play time</p>
-        <p class="em-stat__value"><span class="text-metric">{{ stats.play_minutes | whole_hours }}</span><span class="em-stat__unit text-body">h</span></p>
+        {%- if stats.played_games %}
+        <p class="em-stat__value"><span class="text-metric">{{ stats.play_minutes | hours_value }}</span><span class="em-stat__unit text-body">h</span></p>
         <p class="em-stat__delta text-caption">across {{ stats.played_games }} {{ "game" if stats.played_games == 1 else "games" }}</p>
+        {%- else %}
+        <p class="em-stat__value"><span class="home-stat__text text-subtitle">No play time yet</span></p>
+        <p class="em-stat__delta text-caption">Steam's hours for the games you own</p>
+        {%- endif %}
       </div>
     </li>
     <li class="home-stat em-card">
@@ -43,14 +51,15 @@
     <li class="home-stat em-card">
       <div class="em-stat">
         <p class="em-stat__label text-label">Most played</p>
-        <p class="em-stat__value"><span class="home-stat__text text-subtitle">{{ stats.most_played.name }}</span></p>
+        <p class="em-stat__value"><span class="home-stat__text text-subtitle" title="{{ stats.most_played.name }}">{{ stats.most_played.name }}</span></p>
         <p class="em-stat__delta text-caption">{{ stats.most_played.playtime_minutes | hours }}</p>
       </div>
     </li>
     {%- endif %}
   </ul>
 </section>
-{% endif %}
+{%- endif %}
+</div>
 
 {% if cards %}
 <section aria-labelledby="playing-title">
