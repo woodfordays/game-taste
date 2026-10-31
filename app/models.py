@@ -230,6 +230,8 @@ class AiCall(Base):
     provider_kind: Mapped[str]
     model: Mapped[str]
     prompt_name: Mapped[str]
+    # The version of the prompt file (see app/prompts). Blank for a call with no prompt file.
+    prompt_version: Mapped[str] = mapped_column(server_default="")
     prompt_hash: Mapped[str]  # sha256 hex of the prompt
     request: Mapped[str] = mapped_column(Text)
     response: Mapped[str | None] = mapped_column(Text)

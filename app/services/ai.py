@@ -1,15 +1,23 @@
 """The AI providers behind one small interface, and the log every call goes through."""
 
 import hashlib
+import json
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.models import AiCall
+from app.prompts import Prompt
+
+if TYPE_CHECKING:
+    from app.main import Services
+    from app.services.secrets import Vault
 
 MAX_OUTPUT_TOKENS = 8192
 # A connection check gives up after this many seconds, and does not retry.
@@ -62,6 +70,12 @@ class Completion:
     text: str
     input_tokens: int | None
     output_tokens: int | None
+    # Why the model stopped: "length" (it hit the output limit, so the text is cut off),
+    # "stop" (any other reason), or None when the provider didn't say.
+    stop_reason: str | None = None
+    # The id of the `ai_call` row `call_and_log` wrote for this reply. Not part of equality:
+    # two replies with the same content are equal whichever rows they were logged in.
+    call_id: int | None = field(default=None, compare=False)
 
 
 class Adapter(Protocol):
@@ -77,6 +91,20 @@ class Adapter(Protocol):
 
 class AIError(Exception):
     """A provider call failed. The message is the text saved in the call log."""
+
+
+def _stop_reason(raw: object, length_value: str) -> str | None:
+    """A provider's stop reason as "length", "stop" or None (it didn't give one).
+
+    `length_value` is the provider's word for "hit the output limit". Every other
+    reason, such as a normal finish or a content filter, is "stop". Enums are read by value.
+    """
+    if raw is None:
+        return None
+    text = str(getattr(raw, "value", raw))
+    if not text:
+        return None
+    return "length" if text.casefold() == length_value.casefold() else "stop"
 
 
 @dataclass
@@ -112,12 +140,15 @@ class OpenAICompatibleAdapter:
         response = client.chat.completions.create(
             model=model, messages=[{"role": "user", "content": prompt}]
         )
-        message = response.choices[0].message if response.choices else None
+        choice = response.choices[0] if response.choices else None
+        message = choice.message if choice else None
         usage = response.usage
         return Completion(
             text=(message.content if message else None) or "",
             input_tokens=usage.prompt_tokens if usage else None,
             output_tokens=usage.completion_tokens if usage else None,
+            # Some servers leave finish_reason out.
+            stop_reason=_stop_reason(getattr(choice, "finish_reason", None), "length"),
         )
 
 
@@ -150,6 +181,9 @@ class AnthropicAdapter:
             text=text,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
+            stop_reason=_stop_reason(
+                getattr(response, "stop_reason", None), "max_tokens"
+            ),
         )
 
 
@@ -189,10 +223,16 @@ class GeminiAdapter:
             parts = [usage.candidates_token_count, usage.thoughts_token_count]
             if any(part is not None for part in parts):
                 output_tokens = sum(part or 0 for part in parts)
+        # A reply with no candidates (blocked before any text) has no finish reason.
+        candidates = getattr(response, "candidates", None) or []
         return Completion(
             text=response.text or "",
             input_tokens=usage.prompt_token_count if usage else None,
             output_tokens=output_tokens,
+            stop_reason=_stop_reason(
+                getattr(candidates[0], "finish_reason", None) if candidates else None,
+                "MAX_TOKENS",
+            ),
         )
 
 
@@ -227,6 +267,7 @@ def call_and_log(
     *,
     job: Job | None,
     prompt_name: str,
+    prompt_version: str = "",
     run_ref: str | None = None,
     adapter_factory=make_adapter,
     now: datetime | None = None,
@@ -234,7 +275,9 @@ def call_and_log(
 ) -> Completion:
     """Ask the model and record the call, whether it worked or not.
 
-    A `timeout` in seconds is passed to the adapter (see `Adapter.complete`).
+    `prompt_name` and `prompt_version` say which prompt file made the request (the version
+    is blank for a prompt that isn't a file). A `timeout` in seconds is passed to the adapter
+    (see `Adapter.complete`). The returned completion's `call_id` is the logged row's id.
     On failure the error is logged and an `AIError` carrying the same text is raised.
     """
     row = AiCall(
@@ -242,6 +285,7 @@ def call_and_log(
         provider_kind=cfg.kind.value,
         model=model,
         prompt_name=prompt_name,
+        prompt_version=prompt_version,
         prompt_hash=hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
         request=prompt,
         run_ref=run_ref,
@@ -265,6 +309,7 @@ def call_and_log(
     db.commit()
     if failure is not None:
         raise AIError(error_text) from failure
+    completion.call_id = row.id
     return completion
 
 
@@ -302,3 +347,147 @@ def check_model(
             message += "."
         message += f" {LOCAL_URL_HINT}"
     return CheckResult(False, message)
+
+
+# --- structured replies -------------------------------------------------------
+
+
+def job_config(
+    db: Session, vault: "Vault", job: Job
+) -> tuple[ProviderConfig, str] | None:
+    """The saved provider and model for `job`, or None if the job can't be run yet.
+
+    That is: the job isn't assigned, its provider isn't saved, a Local provider has no
+    server URL, or any other provider's key is missing or can't be decrypted.
+    """
+    # Imported here because ai_setup imports this module.
+    from app.services.ai_setup import stored_ai_setup
+
+    setup = stored_ai_setup(db, vault)
+    assigned = setup.jobs.get(job)
+    if assigned is None:
+        return None
+    kind, model = assigned
+    cfg = setup.providers.get(kind) if kind is not None else None
+    if cfg is None:
+        return None
+    if kind is ProviderKind.LOCAL:
+        # A local server can do without a key, but not without an address.
+        if not cfg.base_url:
+            return None
+    elif not cfg.api_key or kind.value in setup.unreadable:
+        return None
+    return cfg, model
+
+
+class StructuredReplyError(AIError):
+    """A job that needs a JSON reply didn't get one.
+
+    `reason` is "not_configured", "truncated", "unusable" or "call_failed". `message`, also
+    the text of the exception, says what happened and what to do, in words fit to show.
+    """
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.message = message
+
+
+_CALL_FAILED_CHARS = 200
+_RETRY_NOTE_CHARS = 300
+_FENCED = re.compile(r"```[^\n`]*\n?(.*?)```", re.DOTALL)
+
+_Model = TypeVar("_Model", bound=BaseModel)
+
+
+def _parse_reply(reply: str, schema: type[_Model]) -> _Model:
+    """Read a model's reply as a `schema`. Raises ValueError (or a pydantic one) if it isn't.
+
+    Tolerates a code fence around the JSON and chatter before or after it: the JSON is the
+    text from the first "{" to the last "}", inside the first fence that holds one if there
+    is a fence. The text is only ever parsed as JSON, never run.
+    """
+    areas = [block for block in _FENCED.findall(reply) if "{" in block][:1]
+    areas.append(reply)
+    first_error: Exception | None = None
+    for area in areas:
+        start, end = area.find("{"), area.rfind("}")
+        try:
+            if start == -1 or end < start:
+                raise ValueError("the reply has no JSON object in it")
+            return schema.model_validate(json.loads(area[start : end + 1]))
+        # json.JSONDecodeError and pydantic's ValidationError are both ValueErrors.
+        except (ValueError, RecursionError) as exc:
+            first_error = first_error or exc
+    raise first_error
+
+
+def complete_json(
+    db: Session,
+    vault: "Vault",
+    job: Job,
+    prompt: Prompt,
+    context: dict,
+    schema: type[_Model],
+    *,
+    services: "Services",
+    run_ref: str | None,
+    now: datetime,
+) -> tuple[_Model, int]:
+    """Ask the `job` model for a JSON reply to `prompt` and read it as a `schema`.
+
+    Returns the parsed reply and the id of the logged `ai_call` that produced it. A reply
+    that can't be used gets one more try, with the problem added to the prompt. Every call is
+    logged, with the prompt's name and version. Raises `StructuredReplyError`:
+    "not_configured" (the job has no usable setup), "call_failed" (the provider failed, on
+    either call), "truncated" (the model hit its output limit, which a retry can't fix) or
+    "unusable" (two replies in a row couldn't be read).
+    """
+    config = job_config(db, vault, job)
+    if config is None:
+        raise StructuredReplyError(
+            "not_configured",
+            f"Set up the {JOB_LABELS[job]} model in Settings, then refresh again.",
+        )
+    cfg, model = config
+    base = prompt.render(**context)
+
+    problem: str | None = None
+    for _attempt in range(2):
+        asked = base
+        if problem is not None:
+            asked += (
+                f"\n\nYour previous reply could not be used: {problem}. "
+                "Reply again with only the JSON object."
+            )
+        try:
+            completion = call_and_log(
+                db,
+                cfg,
+                model,
+                asked,
+                job=job,
+                prompt_name=prompt.name,
+                prompt_version=prompt.version,
+                run_ref=run_ref,
+                adapter_factory=services.adapter_factory,
+                now=now,
+            )
+        except AIError as err:
+            raise StructuredReplyError(
+                "call_failed",
+                f"The model didn't answer: {str(err)[:_CALL_FAILED_CHARS]}",
+            ) from err
+        if completion.stop_reason == "length":
+            raise StructuredReplyError(
+                "truncated",
+                "The model's reply was cut off. "
+                "Pick a model with a larger output limit in Settings.",
+            )
+        try:
+            return _parse_reply(completion.text, schema), completion.call_id
+        except (ValueError, RecursionError) as exc:
+            problem = str(exc)[:_RETRY_NOTE_CHARS]
+    raise StructuredReplyError(
+        "unusable", "The model's reply wasn't in the expected format."
+    )

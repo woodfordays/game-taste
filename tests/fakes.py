@@ -1,6 +1,7 @@
 """Stand-ins for the AI providers, Tavily and Steam, so no test touches the network."""
 
 import copy
+from collections.abc import Callable
 
 import httpx
 
@@ -20,8 +21,13 @@ class _FakeAdapter:
         failure = self._factory.failures.get(model)
         if failure is not None:
             raise failure
-        text = self._factory.replies.get(model, "ok")
-        return Completion(text=text, input_tokens=5, output_tokens=2)
+        text = self._factory.reply_for(model, prompt)
+        return Completion(
+            text=text,
+            input_tokens=5,
+            output_tokens=2,
+            stop_reason=self._factory.stop_reasons.get(model),
+        )
 
 
 class FakeAdapterFactory:
@@ -30,13 +36,29 @@ class FakeAdapterFactory:
     `.calls` holds one (kind, model, prompt) per `complete()`, and `.timeouts` the
     timeout each of those calls was given. Every reply is "ok" unless
     `.replies[model]` says otherwise, and a model passed to `.fail()` raises.
+    `.replies[model]` is a str, a list of str (used in order, the last one repeating; the
+    place in the list is counted per model over the factory's life), or a function that
+    takes the prompt and returns the reply. `.stop_reasons[model]` is the `stop_reason`
+    of that model's replies ("stop", "length" or None, the default).
     """
 
     def __init__(self) -> None:
         self.calls: list[tuple[ProviderKind, str, str]] = []
         self.timeouts: list[float | None] = []
-        self.replies: dict[str, str] = {}
+        self.replies: dict[str, str | list[str] | Callable[[str], str]] = {}
+        self.stop_reasons: dict[str, str | None] = {}
         self.failures: dict[str, Exception] = {}
+        self._replies_used: dict[str, int] = {}
+
+    def reply_for(self, model: str, prompt: str) -> str:
+        reply = self.replies.get(model, "ok")
+        if callable(reply):
+            return reply(prompt)
+        if isinstance(reply, list):
+            used = self._replies_used.get(model, 0)
+            self._replies_used[model] = used + 1
+            return reply[min(used, len(reply) - 1)]
+        return reply
 
     def __call__(self, cfg: ProviderConfig) -> _FakeAdapter:
         return _FakeAdapter(self, cfg)
