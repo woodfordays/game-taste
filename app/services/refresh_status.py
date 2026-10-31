@@ -1,0 +1,99 @@
+"""Where the refresh stands, for the status the user sees on Settings and the Profiles pages.
+
+The status is read from the newest refresh job and the `RefreshRun` it wrote, so what is shown
+is a record of what happened. The counts come from the run's `details`, one entry for each
+profile, and never from its stored counters: a profile that saved a version and then failed
+on a later batch is counted once, as failed.
+"""
+
+from dataclasses import dataclass
+from typing import Literal
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.jobs import PENDING, REFRESH_KIND
+from app.models import Job, RefreshRun
+from app.services.settings import (
+    DEFAULT_REFRESH_TIME,
+    REFRESH_TIME_SETTING,
+    get_setting,
+)
+
+IDLE = "idle"
+
+# The outcomes the refresh records for a profile (see app/routines/refresh.py).
+UPDATED = "updated"
+FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class FailedProfile:
+    """A profile the refresh couldn't update, and why."""
+
+    label: str
+    message: str
+    saved_through: int | None  # the newest version saved before it failed, if any
+
+
+@dataclass(frozen=True)
+class RefreshStatus:
+    """`state` is "queued" or "running" while a refresh is pending, else "idle". `job` is the
+    newest refresh job and `run` its `RefreshRun`, when it has one."""
+
+    state: Literal["idle", "queued", "running"]
+    job: Job | None
+    run: RefreshRun | None
+
+    @property
+    def busy(self) -> bool:
+        return self.state != IDLE
+
+    @property
+    def _details(self) -> list[dict]:
+        return list(self.run.details) if self.run is not None else []
+
+    @property
+    def updated(self) -> int:
+        """How many profiles the last run updated."""
+        return sum(1 for entry in self._details if entry.get("outcome") == UPDATED)
+
+    @property
+    def failed(self) -> int:
+        """How many profiles the last run couldn't update."""
+        return sum(1 for entry in self._details if entry.get("outcome") == FAILED)
+
+    @property
+    def failures(self) -> list[FailedProfile]:
+        """The profiles that failed, in the order the run tried them."""
+        return [
+            FailedProfile(
+                label=entry.get("label", ""),
+                message=entry.get("message", ""),
+                saved_through=max(entry["versions"]) if entry.get("versions") else None,
+            )
+            for entry in self._details
+            if entry.get("outcome") == FAILED
+        ]
+
+
+def refresh_status(db: Session) -> RefreshStatus:
+    """The state of the refresh, its newest job and that job's run."""
+    job = db.scalars(
+        select(Job).where(Job.kind == REFRESH_KIND).order_by(Job.id.desc()).limit(1)
+    ).first()
+    if job is None:
+        return RefreshStatus(IDLE, None, None)
+    run = db.scalars(select(RefreshRun).where(RefreshRun.job_id == job.id)).first()
+    state = job.status if job.status in PENDING else IDLE
+    return RefreshStatus(state, job, run)
+
+
+def refresh_context(db: Session) -> dict:
+    """What `partials/refresh_status.html` needs: the status, and the daily refresh time it
+    mentions before any refresh has run."""
+    return {
+        "refresh": refresh_status(db),
+        "refresh_time": get_setting(db, REFRESH_TIME_SETTING, DEFAULT_REFRESH_TIME)
+        or DEFAULT_REFRESH_TIME,
+    }

@@ -390,9 +390,10 @@ def test_list_view_profile_links_are_described_by_their_card(
     assert re.search(rf'<h2[^>]*id="{target}"[^>]*>\s*Solo\s*</h2>', text)
 
 
-def test_list_has_an_empty_refresh_area(onboarded_client):
+def test_list_has_the_refresh_status_in_its_refresh_area(onboarded_client):
     text = onboarded_client.get("/profiles").text
-    assert re.search(r'<div id="refresh-area"[^>]*></div>', text)
+    area = re.search(r'<div id="refresh-area"[^>]*>\s*<div id="refresh-status"', text)
+    assert area and "Refresh now" in text
 
 
 def test_list_escapes_a_group_name(onboarded_client, db, people):
@@ -681,10 +682,15 @@ def test_the_group_waiting_message_goes_once_the_group_has_a_version(
     assert WAITING_GROUP not in onboarded_client.get(f"/profiles/group/{crew.id}").text
 
 
-def test_pages_have_an_empty_refresh_area(onboarded_client, db, built_solo_profile):
+def test_pages_have_the_refresh_status_in_their_refresh_area(
+    onboarded_client, db, built_solo_profile
+):
     for url in ("/profiles/lane/solo", "/profiles/lane/two"):
         text = onboarded_client.get(url).text
-        assert re.search(r'<div id="refresh-area"[^>]*></div>', text), url
+        area = re.search(
+            r'<div id="refresh-area"[^>]*>\s*<div id="refresh-status"', text
+        )
+        assert area and "Refresh now" in text, url
 
 
 def test_profile_text_is_escaped_in_every_place(

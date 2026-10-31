@@ -40,6 +40,7 @@ from app.services.people import (
     rename_person,
     set_group_members,
 )
+from app.services.refresh_status import refresh_context
 from app.services.secrets import hash_password, new_password_problem, verify_password
 from app.services.settings import (
     DEFAULT_REFRESH_TIME,
@@ -280,7 +281,11 @@ def _respond(request: Request, db: Session, section: str | None = None, **state)
             context.update(build(request, db))
     if section is not None and is_htmx(request):
         return render(request, PARTIALS[section], **context)
-    return render(request, "settings.html", nav="settings", **context)
+    # The refresh status sits in the Schedule card beside the schedule form, not in it, so a
+    # save of the form doesn't swap it away (or its polling).
+    return render(
+        request, "settings.html", nav="settings", **context, **refresh_context(db)
+    )
 
 
 @router.get(SETTINGS_PATH)

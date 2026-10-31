@@ -1141,6 +1141,51 @@
   display: none;
 }
 
+/* The refresh status: what the last refresh did, then the Refresh now button. In a page header it
+   sits beside the title; in the Schedule card it follows the schedule form behind a hairline. */
+.profiles-head > .refresh-area,
+.profile-head > .refresh-area {
+  max-width: 520px;
+}
+
+.settings-refresh {
+  max-width: 480px;
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--line);
+}
+
+.refresh-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+}
+
+.refresh-status__main {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.refresh-status__text,
+.refresh-status__caption {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.refresh-status__caption {
+  color: var(--ink-muted);
+}
+
+.refresh-status__failures {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-5);
+  overflow-wrap: anywhere;
+}
+
 .profile-list {
   display: flex;
   flex-direction: column;

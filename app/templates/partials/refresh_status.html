@@ -1,0 +1,42 @@
+{#- The refresh status and the Refresh now button. It is the whole content of `#refresh-area` on Settings and on the Profiles pages, and the
+    answer to POST /refresh and GET /refresh/status, which swap it as outerHTML. The root keeps its id in every state so a swap always finds
+    its target. Context: `refresh` (a RefreshStatus: `state`, `busy`, the newest refresh `job` and its `run`, the counts `updated` and
+    `failed`, and `failures`, the profiles that couldn't be updated) and `refresh_time` (the daily refresh time, said before any refresh has run).
+
+    While a refresh is queued or running the root polls for the status every two seconds, and says which state it showed (`was`) so that the
+    poll which finds the refresh over can send the `profiles-refreshed` event. When nothing is pending it carries no polling at all. The same
+    swap that ends the polling brings the button back: it is disabled (`disabled`, and `aria-disabled` for what reads the markup) while a
+    refresh is pending, and `hx-disabled-elt` keeps a second click from going out before the answer comes back.
+
+    The counts come from the run's per-profile outcomes, so a profile is counted once. A failed profile is listed with its message, which is
+    written for the user. All of it is escaped like any text; nothing here marks it as safe. -#}
+{%- set job = refresh.job %}
+<div id="refresh-status" class="refresh-status"{% if refresh.busy %} hx-get="/refresh/status?was={{ refresh.state }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <div class="refresh-status__main">
+    {%- if refresh.state == "queued" %}
+    <p class="refresh-status__text text-body">Refresh queued.</p>
+    {%- elif refresh.state == "running" %}
+    <p class="refresh-status__text text-body">Refreshing profiles.</p>
+    {%- elif job is none %}
+    <p class="refresh-status__text text-body" role="status">No refresh yet. The daily refresh runs at {{ refresh_time }}.</p>
+    {%- elif job.status == "failed" %}
+    <p class="refresh-status__text text-body" role="status">The last refresh failed {{ (job.finished_at or job.created_at) | when }}.{% if job.error %} {{ job.error }}{% endif %}</p>
+    {%- else %}
+    <p class="refresh-status__text text-body" role="status">Last refresh {{ (job.finished_at or job.created_at) | when }}: {{ refresh.updated }} {{ "profile" if refresh.updated == 1 else "profiles" }} updated.{% if refresh.failed %} {{ refresh.failed }} couldn't be updated.{% endif %}</p>
+    {%- if refresh.failures %}
+    <ul class="refresh-status__failures">
+      {%- for failure in refresh.failures %}
+      <li class="text-body">{{ failure.label }}: {{ failure.message }}{% if failure.saved_through is not none %} Versions up to {{ failure.saved_through }} were saved.{% endif %}</li>
+      {%- endfor %}
+    </ul>
+    {%- endif %}
+    {%- if refresh.run and refresh.run.steam_summary %}
+    <p class="refresh-status__caption text-caption">{{ refresh.run.steam_summary }}</p>
+    {%- endif %}
+    {%- endif %}
+  </div>
+  <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"
+    hx-post="/refresh" hx-target="#refresh-status" hx-swap="outerHTML" hx-disabled-elt="this"{% if refresh.busy %} disabled aria-disabled="true"{% endif %}>
+    <span class="em-btn__label">Refresh now</span>
+  </button>
+</div>

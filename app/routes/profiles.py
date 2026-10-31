@@ -32,6 +32,7 @@ from app.services.profiles import (
     targets_with_reviews,
     version_history,
 )
+from app.services.refresh_status import refresh_context
 from app.services.reviews import LANE_LABELS, Lane
 from app.web import is_htmx, parse_id, render
 
@@ -98,7 +99,9 @@ def profiles_page(request: Request, db: Session = Depends(get_db)):
         )
         for summary in list_profiles(db)
     ]
-    return render(request, "profiles.html", nav="profiles", cards=cards)
+    return render(
+        request, "profiles.html", nav="profiles", cards=cards, **refresh_context(db)
+    )
 
 
 @dataclass
@@ -202,9 +205,10 @@ def _profile_page(
     fragment = (
         is_htmx(request) and request.headers.get("hx-history-restore-request") != "true"
     )
+    whole_page = not (fragment and shown)
     response = render(
         request,
-        "partials/profile_lines.html" if fragment and shown else "profile.html",
+        "profile.html" if whole_page else "partials/profile_lines.html",
         nav="profiles",
         label=label,
         base_url=base_url,
@@ -212,6 +216,8 @@ def _profile_page(
         history=history,
         shown=shown,
         questions_label=SECTION_LABELS["open_questions"],
+        # The status sits in the page's header, which the body alone doesn't have.
+        **(refresh_context(db) if whole_page else {}),
     )
     response.headers["Vary"] = "HX-Request, HX-History-Restore-Request"
     return response

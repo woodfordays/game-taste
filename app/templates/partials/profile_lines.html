@@ -5,12 +5,17 @@
     changed, so `hx-history="false"` has it ask the server for the page again, which reads the version from the URL.
 
     A line is an Ember badge with its tag's word, so the color is never the only signal, then the line's text, then the games it comes
-    from. A line with no games has no "From:". Sections with no lines are left out. Open questions are plain, with no tag. -#}
+    from. A line with no games has no "From:". Sections with no lines are left out. Open questions are plain, with no tag.
+
+    The body reloads itself when a refresh finishes (the `profiles-refreshed` event). `hx-get=""` is the address the browser is on, so the
+    version in the URL, if the select pushed one, is the version that comes back, and a page on the newest version moves to the new one.
+    The answer to that request is this same partial. The select's form names its own target and swap, so it doesn't inherit this swap, and
+    no `hx-select` is set here for it to inherit. -#}
 {%- set version_options = [] %}
 {%- for stamp in history %}
 {%- set _ = version_options.append((stamp.version | string, "Version %d · %s" | format(stamp.version, stamp.created_at | when))) %}
 {%- endfor %}
-<div id="profile-body" class="profile-body">
+<div id="profile-body" class="profile-body" hx-get="" hx-trigger="profiles-refreshed from:body" hx-swap="outerHTML">
   <p class="profile-meta text-body">Version {{ shown.stamp.version }} of {{ history | length }} · updated {{ shown.stamp.created_at | when }}</p>
 
   <form id="profile-version" class="profile-version" method="get" action="{{ base_url }}"

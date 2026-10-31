@@ -3,7 +3,7 @@
     swaps only its own card's form (see the partials), so what is typed in another card is left alone. Every button is
     secondary: nothing here is the one thing to do next.
     Context: `form`, `mode`, `form_action` and `row_url` for the AI form; `steam`, `roster`, `schedule` and `account` for the
-    other sections. -#}
+    other sections; `refresh` and `refresh_time` for the refresh status in the Schedule card. -#}
 {% block title %}Settings - Game Taste{% endblock %}
 {% block content %}
 <h1 class="text-headline settings-title">Settings</h1>
@@ -55,6 +55,11 @@
     </header>
     <div class="em-card__body">
       {% include "partials/settings_schedule.html" %}
+      {#- Refresh now and the refresh status. They are next to the schedule form rather than in it: a save swaps the form, and the
+          status keeps polling through it. -#}
+      <div id="refresh-area" class="refresh-area settings-refresh">
+        {%- include "partials/refresh_status.html" %}
+      </div>
     </div>
   </section>
 

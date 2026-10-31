@@ -1,17 +1,21 @@
 {% extends "base.html" %}
 {#- The Profiles page: a card for each lane, then for each named group. Context: `cards` (ProfileCard: `summary` with the target, the
-    newest version and the version count, `href` to the profile and `empty`, what to say while there is no version). A card with a
-    version says which and when, and links to the profile; the link's name is the same on every card, so it is described by the card's
-    title for a screen reader. -#}
+    newest version and the version count, `href` to the profile and `empty`, what to say while there is no version), and `refresh` and
+    `refresh_time` for the status in the header. A card with a version says which and when, and links to the profile; the link's name is
+    the same on every card, so it is described by the card's title for a screen reader.
+
+    The cards load themselves again when a refresh finishes (the `profiles-refreshed` event from the status): the list asks for this page
+    and takes its own cards out of the answer, so the header, and the status in it, are left alone. -#}
 {% block title %}Profiles - Game Taste{% endblock %}
 {% block content %}
 <div class="profiles-head">
   <h1 class="text-headline">Profiles</h1>
-  {#- The refresh status area. Empty for now: Refresh now and the status of a running refresh are put inside it. -#}
-  <div id="refresh-area" class="refresh-area"></div>
+  <div id="refresh-area" class="refresh-area">
+    {%- include "partials/refresh_status.html" %}
+  </div>
 </div>
 
-<ul class="profile-list">
+<ul id="profile-cards" class="profile-list" hx-get="/profiles" hx-trigger="profiles-refreshed from:body" hx-select="#profile-cards" hx-swap="outerHTML">
   {%- for card in cards %}
   {%- set latest = card.summary.latest %}
   <li class="em-card">

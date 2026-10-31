@@ -1320,8 +1320,15 @@ def test_the_new_timezone_is_used_for_times_shown_after_saving(onboarded_client,
     assert re.search(r"<option value=\"Asia/Tokyo\" selected>", text)
 
 
-def test_the_schedule_has_no_refresh_now_button_yet(onboarded_client):
-    assert "Refresh now" not in page(onboarded_client)
+def test_the_schedule_card_has_refresh_now_after_the_form(onboarded_client):
+    text = page(onboarded_client)
+    assert text.count("Refresh now") == 1
+    # In the Schedule card, after the schedule form and before the Account card.
+    assert text.index('id="settings-schedule"') < text.index("Refresh now")
+    assert text.index("Refresh now") < text.index("settings-account-title")
+    assert text.index("</form>", text.index('id="settings-schedule"')) < text.index(
+        "Refresh now"
+    )
 
 
 def test_schedule_htmx_swaps_just_the_section_with_status_200(onboarded_client):

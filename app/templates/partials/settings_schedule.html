@@ -1,4 +1,5 @@
-{#- The Schedule section of Settings. A save swaps this whole form, so it carries its own notice and errors.
+{#- The Schedule section of Settings. A save swaps this whole form, so it carries its own notice and errors. Refresh now and the refresh
+    status are not part of it: they follow it in the card (see settings.html), so a save leaves them alone.
     Context: `schedule`, a ScheduleView: `refresh_time` and `timezone` (the fields' values), `timezone_options` (every zone as a
     pair of value and label), `timezone_placeholder` (set when `timezone` is not on the list, so none is picked quietly),
     `time_error` and `timezone_error` (a field's problem, either may be none) and `saved`. -#}
