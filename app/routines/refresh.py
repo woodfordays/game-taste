@@ -115,8 +115,12 @@ class _Run:
             db.commit()
 
 
-def run_refresh(ctx: JobContext, job_id: int) -> None:
-    """Run one refresh job. Whatever happens, the run row ends with a finish time."""
+def run_refresh(ctx: JobContext, job_id: int) -> int:
+    """Run one refresh job and return its `RefreshRun` id. Whatever happens, the run row
+    ends with a finish time.
+
+    A research run calls this too, with its own job's id, to bring the profiles up to date
+    before it starts."""
     run = _start_run(ctx, job_id)
     try:
         run.steam_summary = _sync_steam(ctx)
@@ -124,6 +128,7 @@ def run_refresh(ctx: JobContext, job_id: int) -> None:
         _update_profiles(ctx, run)
     finally:
         run.save(ctx, finished=True)
+    return run.id
 
 
 def _start_run(ctx: JobContext, job_id: int) -> _Run:
@@ -210,7 +215,7 @@ def _update_profile(
         # Hours say nothing about who played, so a group's profile gets none.
         history = [] if is_group else play_history(db)
         history_appids = {game["appid"] for game in history}
-        today = _local_today(db, ctx.services.clock())
+        today = local_today(db, ctx.services.clock())
         while True:
             versions = unprocessed_versions(db, profile, limit=BATCH_SIZE)
             if not versions:
@@ -299,7 +304,7 @@ def _member_names(db: Session, group_id: int | None) -> list[str]:
     return sorted(names, key=lambda name: (name.casefold(), name))
 
 
-def _local_today(db: Session, now: datetime) -> str:
+def local_today(db: Session, now: datetime) -> str:
     """Today's date as ISO text, in the user's timezone (UTC if it isn't a known zone)."""
     name = get_setting(db, TIMEZONE_SETTING) or DEFAULT_TIMEZONE
     try:

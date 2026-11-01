@@ -284,7 +284,7 @@ class Job(Base):
     __table_args__ = (Index("ix_job_kind_status", "kind", "status"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    kind: Mapped[str]  # refresh (a later plan adds research)
+    kind: Mapped[str]  # refresh or research
     status: Mapped[str]  # queued, running, done or failed
     requested_by: Mapped[str]  # user or schedule
     created_at: Mapped[datetime]

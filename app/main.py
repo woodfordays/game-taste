@@ -12,7 +12,12 @@ from fastapi.staticfiles import StaticFiles
 from app.auth import install_auth
 from app.config import Paths
 from app.db import make_engine, make_session_factory, run_migrations
-from app.jobs import REFRESH_KIND, background_lifespan, recover_interrupted_jobs
+from app.jobs import (
+    REFRESH_KIND,
+    RESEARCH_KIND,
+    background_lifespan,
+    recover_interrupted_jobs,
+)
 from app.routes import auth as auth_routes
 from app.routes import home as home_routes
 from app.routes import library as library_routes
@@ -22,7 +27,9 @@ from app.routes import refresh as refresh_routes
 from app.routes import reviews as review_routes
 from app.routes import settings as settings_routes
 from app.routines.refresh import run_refresh
+from app.routines.research import run_research
 from app.services.ai import Adapter, ProviderConfig, make_adapter
+from app.services.research_runs import recover_interrupted_research
 from app.services.search import SearchClient, make_search_client
 from app.services.secrets import (
     Vault,
@@ -74,7 +81,7 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
     app.state.engine = make_engine(paths.db_path)
     app.state.session_factory = make_session_factory(app.state.engine)
     # Handlers by job kind, each called with a JobContext and the job's id.
-    app.state.job_handlers = {REFRESH_KIND: run_refresh}
+    app.state.job_handlers = {REFRESH_KIND: run_refresh, RESEARCH_KIND: run_research}
     app.state.job_wakeup = threading.Event()
     # How finished jobs ended when saving it failed, by job id (see app/jobs.py).
     app.state.unrecorded_outcomes = {}
@@ -83,6 +90,9 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
         # A job still "running" now was cut off by the last shutdown. Fail it, so that it
         # doesn't block the next one.
         recover_interrupted_jobs(db, services.clock())
+        # A research run still "running" was cut off with its job. Pause it, so that it
+        # can carry on with one more round (or end it, if it was being cancelled).
+        recover_interrupted_research(db, services.clock())
 
     if paths.reset_flag_path.exists():
         # Forgot the password: drop it, keep everything else, and ask for a new one.

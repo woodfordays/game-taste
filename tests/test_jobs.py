@@ -27,6 +27,7 @@ from app.jobs import (
 from app.main import create_app
 from app.models import Job
 from app.routines.refresh import run_refresh
+from app.routines.research import run_research
 from app.services.settings import set_setting
 
 
@@ -41,6 +42,18 @@ def test_enqueue_returns_the_running_job_too(db):
     db.execute(update(Job).where(Job.id == a.id).values(status="running"))
     db.commit()
     assert enqueue_job(db, "refresh", "user", FIXED_NOW).id == a.id
+
+
+def test_enqueue_behind_running_queues_one_job_behind_the_running_one(db):
+    a = enqueue_job(db, "research", "user", FIXED_NOW)
+    db.execute(update(Job).where(Job.id == a.id).values(status="running"))
+    db.commit()
+    b = enqueue_job(db, "research", "user", FIXED_NOW, behind_running=True)
+    assert b.id != a.id and b.status == "queued"
+    assert (
+        enqueue_job(db, "research", "user", FIXED_NOW, behind_running=True).id == b.id
+    )
+    assert db.scalar(select(func.count()).select_from(Job)) == 2
 
 
 def test_enqueue_starts_a_new_job_once_the_last_one_has_finished(db):
@@ -196,17 +209,17 @@ def test_the_traceback_is_logged(app, db, caplog):
     assert record.exc_info is not None and record.exc_info[0] is RuntimeError
 
 
-def test_the_refresh_handler_is_registered_at_startup(app):
-    assert app.state.job_handlers == {"refresh": run_refresh}
+def test_the_refresh_and_research_handlers_are_registered_at_startup(app):
+    assert app.state.job_handlers == {"refresh": run_refresh, "research": run_research}
 
 
 def test_a_kind_with_no_handler_fails_with_a_clear_message(app, db):
-    job = enqueue_job(db, "research", "user", FIXED_NOW)
-    assert "research" not in app.state.job_handlers
+    job = enqueue_job(db, "sample", "user", FIXED_NOW)
+    assert "sample" not in app.state.job_handlers
     assert run_pending_jobs(app) == 1
     db.expire_all()
     row = db.get(Job, job.id)
-    assert row.status == "failed" and row.error == "Nothing can run a research job yet."
+    assert row.status == "failed" and row.error == "Nothing can run a sample job yet."
     assert row.finished_at == FIXED_NOW
 
 
@@ -565,12 +578,12 @@ def test_a_failed_job_outcome_is_kept_through_a_failed_write(app, db, monkeypatc
 
 
 def test_a_missing_handler_outcome_is_kept_through_a_failed_write(app, db, monkeypatch):
-    job_id = enqueue_job(db, "research", "user", FIXED_NOW).id
+    job_id = enqueue_job(db, "sample", "user", FIXED_NOW).id
     _fail_writes(monkeypatch, 1)
     run_pending_jobs(app)
     run_pending_jobs(app)
     db.expire_all()
-    assert db.get(Job, job_id).error == "Nothing can run a research job yet."
+    assert db.get(Job, job_id).error == "Nothing can run a sample job yet."
 
 
 def test_nothing_new_starts_while_an_outcome_cannot_be_saved(app, db, monkeypatch):

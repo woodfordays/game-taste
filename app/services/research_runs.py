@@ -2,19 +2,31 @@
 
 A run has a target for each lane (`LaneTarget`), a log of what it did (`ResearchEvent`) and the
 user's choices (`ResearchChoice`, never edited). Only one run is active at a time, which is
-one that is running or paused. The work itself is done elsewhere; this module keeps the
-records and the plan.
+one that is running or paused. The work itself is done by the research job
+(`app.routines.research.run_research`); this module keeps the records and the plan, and
+makes the user's choices: start, one more round, stop and cancel.
+
+A run goes through `AUTO_ROUNDS` rounds on its own and then pauses while lanes are still
+short. From a pause, each `continue_research` allows exactly one more round. Every change of
+a run's status is a conditional update (`end_run`, `continue_research`, `cancel_research`),
+so a click on one thread and the job on another can't both act on the same state.
 """
 
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import Session
 
-from app.models import Candidate, ResearchChoice, ResearchEvent, ResearchRun
+from app.jobs import QUEUED, REQUESTED_BY_USER, RESEARCH_KIND, enqueue_job
+from app.models import Candidate, Job, ResearchChoice, ResearchEvent, ResearchRun
+from app.services.ai import JOB_LABELS, job_config
+from app.services.ai import Job as AiJob
+from app.services.ai_setup import stored_ai_setup
 from app.services.queue import ACCEPTED, TARGET, TOP_UP, recommended_counts
 from app.services.reviews import LANE_LABELS, Lane
+from app.services.secrets import Vault
 
 RUNNING = "running"
 PAUSED = "paused"
@@ -37,6 +49,40 @@ RUN_STATUS_LABELS = {
 
 # The rounds a run goes through on its own before it pauses.
 AUTO_ROUNDS = 3
+
+# The models research needs, in the order their blockers are listed.
+RESEARCH_JOBS = (AiJob.RECOMMENDER, AiJob.JUDGE, AiJob.EVERYDAY)
+
+# The user's choices that act on a run once it has started (`ResearchChoice.choice`).
+CONTINUE = "continue"
+STOP = "stop"
+CANCEL = "cancel"
+
+SET_UP_MODEL = "Set up the {label} model in Settings, then run research again."
+ADD_TAVILY_KEY = "Add a Tavily key in Settings, then run research again."
+ALREADY_RUNNING = "Research is already running."
+EVERY_LANE_FULL = (
+    f"Every lane already has {TARGET} recommended games. "
+    f"Tick a lane to add {TOP_UP} more."
+)
+STOPPED_AFTER = "Stopped after round {n}."
+CANCELLED_AT_ONCE = "Cancelled."
+CANCELLED_KEPT = "Cancelled. Games the judge accepted before this were kept."
+INTERRUPTED = "Interrupted by a restart. Run one more round to carry on, or stop here."
+
+# Two clicks on Start arrive on different threads, and `create_run` checks for an active
+# run with no unique index behind it. One process serves the app, so this lock keeps one
+# start's check and insert from interleaving with another's, as `_enqueue_lock` does for
+# jobs.
+_start_lock = threading.Lock()
+
+
+class ResearchError(Exception):
+    """Research can't start. `message` says why and what to do, in words fit to show."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 @dataclass
@@ -139,6 +185,190 @@ def create_run(db: Session, add_five: set[Lane], now: datetime) -> ResearchRun:
         db.rollback()
         raise
     return run
+
+
+def research_blockers(db: Session, vault: Vault) -> list[str]:
+    """What has to be set up before research can run, as lines to show, in order: a model
+    for each of the Recommender, the Review judge and Everyday tasks, then the Tavily key.
+    Empty when research can run."""
+    blockers = [
+        SET_UP_MODEL.format(label=JOB_LABELS[job])
+        for job in RESEARCH_JOBS
+        if job_config(db, vault, job) is None
+    ]
+    if not stored_ai_setup(db, vault).tavily_key:
+        blockers.append(ADD_TAVILY_KEY)
+    return blockers
+
+
+def start_research(
+    db: Session, vault: Vault, add_five: set[Lane], now: datetime
+) -> ResearchRun:
+    """Start a run (see `create_run`) and queue the job that does it. The caller wakes the
+    worker.
+
+    Raises `ResearchError`, saving nothing, with the first of the `research_blockers`, then
+    while a run is running or paused, then when no lane gets a target (every lane is full
+    and none is ticked for 5 more).
+    """
+    blockers = research_blockers(db, vault)
+    if blockers:
+        raise ResearchError(blockers[0])
+    with _start_lock:
+        if active_run(db) is not None:
+            raise ResearchError(ALREADY_RUNNING)
+        targets = plan_targets(recommended_counts(db), add_five)
+        if all(target.target is None for target in targets):
+            raise ResearchError(EVERY_LANE_FULL)
+        run = create_run(db, add_five, now)
+        _queue_research(db, now)
+    return run
+
+
+def continue_research(db: Session, run_id: int, now: datetime) -> bool:
+    """Give a paused run exactly one more round: add 1 to `rounds_allowed`, set it running,
+    save the `continue` choice and queue the job. The caller wakes the worker.
+
+    Returns False, changing nothing, for a run that isn't paused, so a second click is a
+    no-op. The check and the change are one conditional update, so two clicks on two
+    threads can't both pass it.
+    """
+    resumed = db.execute(
+        update(ResearchRun)
+        .where(ResearchRun.id == run_id, ResearchRun.status == PAUSED)
+        .values(status=RUNNING, rounds_allowed=ResearchRun.rounds_allowed + 1)
+    )
+    if resumed.rowcount != 1:
+        db.rollback()
+        return False
+    _add_choice(db, run_id, CONTINUE, now)
+    db.commit()
+    _queue_research(db, now)
+    return True
+
+
+def stop_research(db: Session, run_id: int, now: datetime) -> bool:
+    """End a paused run as stopped, saving the `stop` choice. False, changing nothing, for
+    a run that isn't paused."""
+    row = db.execute(
+        select(ResearchRun.status, ResearchRun.rounds_done).where(
+            ResearchRun.id == run_id
+        )
+    ).first()
+    if row is None or row.status != PAUSED:
+        return False
+    message = STOPPED_AFTER.format(n=row.rounds_done)
+    return end_run(db, run_id, STOPPED, message, now, was=PAUSED, choice=STOP)
+
+
+def cancel_research(db: Session, run_id: int, now: datetime) -> bool:
+    """Cancel a run, saving the `cancel` choice.
+
+    A paused run is cancelled at once. A running one is asked to (`cancel_requested`), and
+    its job ends it at its next check, keeping what the judge accepted before. Returns
+    False, changing nothing, for any other run, and for a running one already asked.
+    """
+    asked = db.execute(
+        update(ResearchRun)
+        .where(
+            ResearchRun.id == run_id,
+            ResearchRun.status == RUNNING,
+            ResearchRun.cancel_requested.is_(False),
+        )
+        .values(cancel_requested=True)
+    )
+    if asked.rowcount == 1:
+        _add_choice(db, run_id, CANCEL, now)
+        db.commit()
+        return True
+    # Still in the same write transaction, so the job can't pause the run in between. One
+    # it paused just before is cancelled here.
+    return end_run(
+        db, run_id, CANCELLED, CANCELLED_AT_ONCE, now, was=PAUSED, choice=CANCEL
+    )
+
+
+def end_run(
+    db: Session,
+    run_id: int,
+    status: str,
+    message: str,
+    now: datetime,
+    *,
+    was: str = RUNNING,
+    choice: str | None = None,
+) -> bool:
+    """Give the run its new `status` and add `message` to its log: the one place a run's
+    ending is written, a pause included.
+
+    It sets `finished_at` unless the run is only paused, and `message` as the `error` of a
+    failed run. `choice`, when given, is the user's choice that ended it, saved with it. The
+    log line's step is the new status.
+
+    Only a run whose status is `was` changes, and a run asked to cancel is never paused or
+    finished: its caller cancels it instead. Check and change are one conditional update,
+    so a click on another thread can't slip in between. Returns whether the run changed.
+    When it didn't, the session is rolled back and nothing is saved.
+    """
+    criteria = [ResearchRun.id == run_id, ResearchRun.status == was]
+    if status in (PAUSED, FINISHED):
+        criteria.append(ResearchRun.cancel_requested.is_(False))
+    values: dict[str, object] = {"status": status}
+    if status != PAUSED:
+        values["finished_at"] = now
+    if status == FAILED:
+        values["error"] = message
+    ended = db.execute(update(ResearchRun).where(*criteria).values(**values))
+    if ended.rowcount != 1:
+        db.rollback()
+        return False
+    if choice is not None:
+        _add_choice(db, run_id, choice, now)
+    add_event(db, run_id, status, message, now)  # commits it all
+    return True
+
+
+def recover_interrupted_research(db: Session, now: datetime) -> int:
+    """Settle each run that a restart left running, and return how many there were.
+
+    One asked to cancel is cancelled. Any other is paused with no rounds left
+    (`rounds_allowed = rounds_done`), so that one more round carries it on. Call it after
+    `recover_interrupted_jobs`. Nothing changes while a research job is queued: that job
+    never started, and it will pick the run up.
+    """
+    queued = db.scalar(
+        select(Job.id).where(Job.kind == RESEARCH_KIND, Job.status == QUEUED).limit(1)
+    )
+    if queued is not None:
+        return 0
+    runs = list(
+        db.scalars(
+            select(ResearchRun)
+            .where(ResearchRun.status == RUNNING)
+            .order_by(ResearchRun.id)
+        )
+    )
+    for run in runs:
+        if run.cancel_requested:
+            end_run(db, run.id, CANCELLED, CANCELLED_KEPT, now)
+        else:
+            run.rounds_allowed = run.rounds_done  # saved by end_run's commit
+            end_run(db, run.id, PAUSED, INTERRUPTED, now)
+    return len(runs)
+
+
+def _queue_research(db: Session, now: datetime) -> None:
+    """Queue a research job, unless one is already queued, which will pick the run up.
+
+    A research job still marked running doesn't count. A run is started or continued only
+    while no run is running, so that job is done with its run and only waiting to be marked
+    done. Joining it would leave the run with no job.
+    """
+    enqueue_job(db, RESEARCH_KIND, REQUESTED_BY_USER, now, behind_running=True)
+
+
+def _add_choice(db: Session, run_id: int, choice: str, now: datetime) -> None:
+    db.add(ResearchChoice(run_id=run_id, choice=choice, lane=None, made_at=now))
 
 
 def add_event(

@@ -1,4 +1,9 @@
-"""Research: one lane through one round (`research_lane`).
+"""Research: the job that takes a run through its rounds (`run_research`), and one lane
+through one round (`research_lane`).
+
+A run's job works through one segment of the run: the whole run up to its pause, or the
+one more round a continue allows. The first segment refreshes the profiles first and notes
+the lanes the run leaves out (see `run_research`).
 
 A round takes a lane through these steps, in order, and writes a line to the run's log as
 it goes:
@@ -57,7 +62,7 @@ from app.routines.recommender import (
     check_proposals,
     number_lines,
 )
-from app.routines.refresh import _local_today
+from app.routines.refresh import local_today, run_refresh
 from app.services.ai import StructuredReplyError
 from app.services.ai_setup import stored_ai_setup
 from app.services.game_facts import (
@@ -93,7 +98,19 @@ from app.services.queue import (
     rejected_in_run,
     save_judged,
 )
-from app.services.research_runs import add_event, run_targets
+from app.services.research_runs import (
+    CANCELLED,
+    CANCELLED_KEPT,
+    FAILED,
+    FINISHED,
+    PAUSED,
+    RUNNING,
+    add_event,
+    end_run,
+    lanes_short,
+    research_blockers,
+    run_targets,
+)
 from app.services.reviews import LANE_LABELS, Lane
 from app.services.search import (
     SearchClient,
@@ -123,7 +140,10 @@ SEARCH_RESULTS = 5
 # Reviews the judge reads, newest first.
 JUDGE_REVIEWS_LIMIT = 40
 
-# The `step` of each line the lane writes to the run's log.
+# The `step` of each line written to the run's log: the job's own first (the line that
+# ends a run has the run's new status, see `end_run`), then the lane's.
+STEP_REFRESH = "refresh"
+STEP_ROUND = "round"
 STEP_HISTORY = "history"
 STEP_PLAN = "plan"
 STEP_SEARCH = "search"
@@ -134,6 +154,14 @@ STEP_JUDGE = "judge"
 STEP_SAVED = "saved"
 STEP_SKIPPED = "skipped"
 STEP_PROBLEM = "problem"
+
+REFRESHING = "Refreshing profiles first."
+REFRESHED = "Profiles are up to date."
+ROUND = "Round {round}."
+EVERY_LANE_FILLED = "Every lane is filled."
+NO_LANE_RESEARCHED = "No lane could be researched this time."
+PAUSED_SHORT = "Paused after round {n}. Still short: {lanes}."
+RUN_STOPPED = "Research stopped unexpectedly: {kind}. Try again."
 
 NO_PROFILE = (
     "No profile yet for {lane}. Publish a review played at this head count first."
@@ -258,6 +286,140 @@ def _distinct(results: list[SearchResult]) -> list[SearchResult]:
         seen.add(result.url)
         kept.append(result)
     return kept
+
+
+# --- the run's job ----------------------------------------------------------------------
+
+
+def run_research(ctx: JobContext, job_id: int) -> None:
+    """The handler for research jobs: take the running run through its next segment.
+
+    1. It finds the run that is running, if there is one. One already asked to cancel is
+       cancelled before anything else.
+    2. In the run's first segment, it refreshes the profiles as this job's own refresh,
+       then notes each lane the run leaves out, in lane order: a full lane (its note from
+       `plan_targets`) and one with no profile yet. That lane keeps its target with the
+       note, so it is never short, and never researched or reported again.
+    3. A model or the Tavily key not set up fails the run with the first blocker.
+    4. Rounds, while the run has rounds left and lanes short: each short lane, in lane
+       order, through `research_lane`.
+    5. The end: finished when no lane is short, else paused until the user picks one more
+       round, stop or cancel.
+
+    Every ending goes through `end_run`. A cancel that a lane finds ends the run as
+    cancelled, keeping what the judge accepted before it, and so does one found at the end.
+    A model that isn't set up fails the run with its message. Any other exception fails
+    the run with its type only, since the message might hold a secret, and is raised again
+    so that the job fails too.
+    """
+    with ctx.session_factory() as db:
+        run = db.scalar(
+            select(ResearchRun)
+            .where(ResearchRun.status == RUNNING)
+            .order_by(ResearchRun.id.desc())
+            .limit(1)
+        )
+        if run is None:
+            return
+        run_id, cancel_requested = run.id, run.cancel_requested
+    if cancel_requested:
+        _end_run(ctx, run_id, CANCELLED, CANCELLED_KEPT)
+        return
+    try:
+        status, message = _run_segment(ctx, run_id, job_id)
+    except Exception as exc:
+        if isinstance(exc, StructuredReplyError) and exc.reason == NOT_CONFIGURED:
+            _end_run(ctx, run_id, FAILED, exc.message)
+            return
+        _end_run(ctx, run_id, FAILED, RUN_STOPPED.format(kind=type(exc).__name__))
+        raise
+    _end_run(ctx, run_id, status, message)
+
+
+def _run_segment(ctx: JobContext, run_id: int, job_id: int) -> tuple[str, str]:
+    """Steps 2 to 5 of `run_research`. Returns the status and the log line to end the run
+    with."""
+    with ctx.session_factory() as db:
+        first = db.get(ResearchRun, run_id).refresh_run_id is None
+    if first:
+        _first_segment(ctx, run_id, job_id)
+    with ctx.session_factory() as db:
+        blockers = research_blockers(db, ctx.vault)
+    if blockers:
+        return FAILED, blockers[0]
+    while True:
+        with ctx.session_factory() as db:
+            run = db.get(ResearchRun, run_id)
+            short = lanes_short(db, run)
+            if run.rounds_done >= run.rounds_allowed or not short:
+                break
+            number = run.rounds_done + 1
+            add_event(
+                db,
+                run_id,
+                STEP_ROUND,
+                ROUND.format(round=number),
+                ctx.services.clock(),
+                round=number,
+            )
+        for lane in short:
+            if research_lane(ctx, run_id, number, lane).cancelled:
+                return CANCELLED, CANCELLED_KEPT
+        with ctx.session_factory() as db:
+            db.get(ResearchRun, run_id).rounds_done += 1
+            db.commit()
+    with ctx.session_factory() as db:
+        run = db.get(ResearchRun, run_id)
+        short = lanes_short(db, run)
+        if short:
+            lanes = ", ".join(LANE_LABELS[lane] for lane in short)
+            return PAUSED, PAUSED_SHORT.format(n=run.rounds_done, lanes=lanes)
+        researched = any(
+            target.target is not None and target.note is None
+            for target in run_targets(run)
+        )
+        return FINISHED, EVERY_LANE_FILLED if researched else NO_LANE_RESEARCHED
+
+
+def _first_segment(ctx: JobContext, run_id: int, job_id: int) -> None:
+    """Refresh the profiles, then note the lanes the run leaves out (see `run_research`)."""
+    with ctx.session_factory() as db:
+        add_event(db, run_id, STEP_REFRESH, REFRESHING, ctx.services.clock())
+    refresh_run_id = run_refresh(ctx, job_id)
+    with ctx.session_factory() as db:
+        run = db.get(ResearchRun, run_id)
+        targets = run_targets(run)
+        for target in targets:
+            if (
+                target.target is not None
+                and target.note is None
+                and not _has_profile_version(db, target.lane)
+            ):
+                target.note = NO_PROFILE.format(lane=LANE_LABELS[target.lane])
+        run.targets = [target.as_json() for target in targets]
+        run.refresh_run_id = refresh_run_id
+        now = ctx.services.clock()
+        # This line's commit saves the notes and the refresh with it, so a later segment
+        # neither refreshes again nor researches a lane left out.
+        add_event(db, run_id, STEP_REFRESH, REFRESHED, now)
+        for target in targets:
+            if target.note is not None:
+                add_event(db, run_id, STEP_SKIPPED, target.note, now, lane=target.lane)
+
+
+def _has_profile_version(db: Session, lane: Lane) -> bool:
+    profile = find_profile(db, lane_key(lane))
+    return profile is not None and current_version(db, profile) is not None
+
+
+def _end_run(ctx: JobContext, run_id: int, status: str, message: str) -> None:
+    """End the run through `end_run`. A pause or a finish that `end_run` refuses, because
+    the run was asked to cancel meanwhile, becomes the cancel."""
+    with ctx.session_factory() as db:
+        now = ctx.services.clock()
+        ended = end_run(db, run_id, status, message, now)
+        if not ended and status in (PAUSED, FINISHED):
+            end_run(db, run_id, CANCELLED, CANCELLED_KEPT, now)
 
 
 # --- one lane, one round ----------------------------------------------------------------
@@ -412,7 +574,7 @@ class _LaneRound:
                 {"game": names[candidate.appid], "reason": candidate.reason}
                 for candidate in rejected
             ],
-            today=_local_today(db, self.now),
+            today=local_today(db, self.now),
         )
         self.search = self.ctx.services.search_factory(
             stored_ai_setup(db, self.ctx.vault).tavily_key

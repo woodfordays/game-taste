@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("game_taste.jobs")
 
 REFRESH_KIND = "refresh"
+RESEARCH_KIND = "research"
 
 QUEUED = "queued"
 RUNNING = "running"
@@ -95,13 +96,18 @@ def notify_worker(app: FastAPI) -> None:
 
 
 def _enqueue(
-    db: Session, kind: str, requested_by: str, now: datetime
+    db: Session,
+    kind: str,
+    requested_by: str,
+    now: datetime,
+    *,
+    joins: tuple[str, ...] = PENDING,
 ) -> tuple[Job, bool]:
-    """The pending job of `kind` and False, or a new one and True."""
+    """The job of `kind` in one of the `joins` statuses and False, or a new one and True."""
     with _enqueue_lock:
         existing = db.scalars(
             select(Job)
-            .where(Job.kind == kind, Job.status.in_(PENDING))
+            .where(Job.kind == kind, Job.status.in_(joins))
             .order_by(Job.id)
             .limit(1)
         ).first()
@@ -113,9 +119,23 @@ def _enqueue(
         return job, True
 
 
-def enqueue_job(db: Session, kind: str, requested_by: str, now: datetime) -> Job:
-    """Queue a `kind` job, or return the one of that kind already queued or running."""
-    return _enqueue(db, kind, requested_by, now)[0]
+def enqueue_job(
+    db: Session,
+    kind: str,
+    requested_by: str,
+    now: datetime,
+    *,
+    behind_running: bool = False,
+) -> Job:
+    """Queue a `kind` job, or return the one of that kind already queued or running.
+
+    With `behind_running`, only a queued job is returned: a running one doesn't count, and
+    the new job waits behind it. That is for work whose running job may already be done
+    with its part and only waiting to be marked done, as a research job is once the run it
+    worked on has paused or ended.
+    """
+    joins = (QUEUED,) if behind_running else PENDING
+    return _enqueue(db, kind, requested_by, now, joins=joins)[0]
 
 
 def claim_job(db: Session, job_id: int, now: datetime) -> bool:
