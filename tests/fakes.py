@@ -95,6 +95,26 @@ class FakeAdapterFactory:
         self.failures[model] = exc
 
 
+def by_prompt(
+    default: str | Callable[[str], str] = "ok",
+    **replies: str | Callable[[str], str],
+) -> Callable[[str], str]:
+    """A reply function for `FakeAdapterFactory.replies` that picks the reply by the
+    prompt's first line, `# <name>`.
+
+    Each keyword is a prompt name and its reply, a str or a function of the prompt.
+    Any other prompt gets `default`, which is the same kind of value.
+    """
+
+    def reply(prompt: str) -> str:
+        first_line = prompt.partition("\n")[0].strip()
+        name = first_line.removeprefix("# ") if first_line.startswith("# ") else None
+        chosen = replies.get(name, default) if name is not None else default
+        return chosen(prompt) if callable(chosen) else chosen
+
+    return reply
+
+
 class _FakeSearchClient:
     def __init__(self, factory: "FakeSearchFactory") -> None:
         self._factory = factory
@@ -103,6 +123,8 @@ class _FakeSearchClient:
         self._factory.calls.append((query, max_results))
         if self._factory.failure is not None:
             raise self._factory.failure
+        if self._factory.responder is not None:
+            return self._factory.responder(query)
         return copy.deepcopy(self._factory.payload)
 
 
@@ -110,10 +132,12 @@ class FakeSearchFactory:
     """Stands in for `make_search_client`.
 
     `.payload` is shaped like Tavily's reply. `.calls` holds one (query, max_results)
-    per `search()`, and `.fail()` makes every search raise.
+    per `search()`, and `.fail()` makes every search raise. When `.responder` is set, a
+    search returns `responder(query)` instead of `.payload`.
     """
 
     def __init__(self) -> None:
+        self.responder: Callable[[str], dict] | None = None
         self.payload: dict = {
             "query": "co-op games",
             "results": [
