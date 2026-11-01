@@ -9,6 +9,7 @@ from sqlalchemy import (
     MetaData,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -369,3 +370,118 @@ class RefreshRun(Base):
     profiles_total: Mapped[int | None]
     profiles_checked: Mapped[int] = mapped_column(server_default="0")
     current_profile: Mapped[str | None] = mapped_column(Text)
+
+
+class ResearchRun(Base):
+    """One run of research: which lanes it works on and how many games each should reach
+    (`targets`, one `LaneTarget.as_json()` per lane in lane order), how far it has got, and how
+    it ended. `status` is running, paused, finished, stopped, cancelled or failed. The user's
+    choices and the progress log are kept beside it (`ResearchChoice`, `ResearchEvent`).
+    `refresh_run_id` is the refresh the run started with, if it needed one."""
+
+    __tablename__ = "research_run"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[str]
+    targets: Mapped[list[dict]] = mapped_column(JSON)
+    rounds_allowed: Mapped[int] = mapped_column(default=3, server_default="3")
+    rounds_done: Mapped[int] = mapped_column(default=0, server_default="0")
+    cancel_requested: Mapped[bool] = mapped_column(
+        default=False, server_default=false()
+    )
+    refresh_run_id: Mapped[int | None] = mapped_column(ForeignKey("refresh_run.id"))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime]
+    finished_at: Mapped[datetime | None]
+
+
+class ResearchChoice(Base):
+    """One thing the user chose in a run, never edited: `start`, `add_five` (with the lane
+    it was ticked for), `continue`, `stop` or `cancel`."""
+
+    __tablename__ = "research_choice"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("research_run.id"))
+    choice: Mapped[str]
+    lane: Mapped[str | None]
+    made_at: Mapped[datetime]
+
+
+class ResearchEvent(Base):
+    """One line of a run's progress log, never edited."""
+
+    __tablename__ = "research_event"
+    __table_args__ = (Index("ix_research_event_run_id", "run_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("research_run.id"))
+    round: Mapped[int | None]
+    lane: Mapped[str | None]
+    step: Mapped[str]
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime]
+
+
+class Candidate(Base):
+    """One game research proposed for a lane, and what the judge made of it, never edited.
+
+    `source` is where the game came from (web_research, candidate_history or owned_backlog).
+    `fits` is a list of `{"section", "text", "tag", "how"}`: the lines of the lane's profile
+    the proposal cites and how the game meets each. `version` and `facts` are what was known
+    of the game when it was judged (`GameVersion.as_json()` and `GameFacts.snapshot()`), and
+    `profile_version_id` the version of the lane's profile it was judged against. `verdict` is
+    accepted, rejected or no_verdict. `added` says whether it went into the inventory, which
+    an accepted game does only while the lane has room."""
+
+    __tablename__ = "candidate"
+    __table_args__ = (Index("ix_candidate_lane_appid", "lane", "appid"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("research_run.id"))
+    round: Mapped[int]
+    lane: Mapped[str]
+    appid: Mapped[int] = mapped_column(ForeignKey("game.appid"))
+    source: Mapped[str]
+    fits: Mapped[list[dict]] = mapped_column(JSON)
+    risk: Mapped[str] = mapped_column(Text)
+    version: Mapped[dict] = mapped_column(JSON)
+    facts: Mapped[dict] = mapped_column(JSON)
+    profile_version_id: Mapped[int] = mapped_column(ForeignKey("profile_version.id"))
+    verdict: Mapped[str]
+    reason: Mapped[str] = mapped_column(Text)
+    list_rejected: Mapped[bool] = mapped_column(default=False, server_default=false())
+    added: Mapped[bool] = mapped_column(default=False, server_default=false())
+    recommender_call_id: Mapped[int | None] = mapped_column(ForeignKey("ai_call.id"))
+    judge_call_id: Mapped[int | None] = mapped_column(ForeignKey("ai_call.id"))
+    created_at: Mapped[datetime]
+
+
+class InventoryEntry(Base):
+    """A game in a lane's inventory. `status` is recommended, in_progress, played or
+    declined, and each change of it is kept as an `InventoryStatusChange`. `candidate_id` is
+    the accepted proposal behind the game's latest Recommended."""
+
+    __tablename__ = "inventory_entry"
+    __table_args__ = (UniqueConstraint("lane", "appid"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lane: Mapped[str]
+    appid: Mapped[int] = mapped_column(ForeignKey("game.appid"))
+    status: Mapped[str]
+    rank: Mapped[int]
+    candidate_id: Mapped[int] = mapped_column(ForeignKey("candidate.id"))
+    created_at: Mapped[datetime]
+
+
+class InventoryStatusChange(Base):
+    """One change of an inventory entry's status, never edited."""
+
+    __tablename__ = "inventory_status_change"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entry_id: Mapped[int] = mapped_column(ForeignKey("inventory_entry.id"))
+    status: Mapped[str]
+    reason: Mapped[str | None] = mapped_column(Text)
+    candidate_id: Mapped[int | None] = mapped_column(ForeignKey("candidate.id"))
+    changed_at: Mapped[datetime]

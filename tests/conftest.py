@@ -15,10 +15,19 @@ from starlette.requests import Request
 
 from app.auth import advance_step
 from app.main import Services, create_app
-from app.models import Game
+from app.models import AiCall, Game
 from app.services.ai_setup import AiSetup, parse_ai_form, save_ai_setup
 from app.services.library import sync_library
 from app.services.people import add_group, add_person
+from app.services.profiles import (
+    ProfileTarget,
+    ProfileUpdate,
+    ensure_profile,
+    lane_key,
+    save_version,
+)
+from app.services.research_runs import create_run
+from app.services.reviews import LANE_LABELS, Lane, ReviewForm, publish
 from app.services.secrets import hash_password
 from app.services.settings import set_secret, set_setting
 from app.services.steam import SteamClient
@@ -187,3 +196,72 @@ def saved_ai_setup(db, app):
     assert errors == []
     save_ai_setup(db, app.state.vault, setup, now=FIXED_NOW)
     return setup
+
+
+@pytest.fixture
+def solo_version(db, games):
+    """The Solo profile's version 1, learned from a published Solo review of Sample Quest
+    (appid 10, rating 8, "Short runs, real choices every turn."). It has one stated line
+    under `loved`, "Likes short, tight sessions", that cites the game and the review."""
+    review = publish(
+        db,
+        10,
+        Lane.SOLO,
+        ReviewForm(rating=8, text="Short runs, real choices every turn."),
+        FIXED_NOW,
+    )
+    profile = ensure_profile(
+        db,
+        ProfileTarget(
+            lane_key(Lane.SOLO), "lane", Lane.SOLO, None, LANE_LABELS[Lane.SOLO]
+        ),
+        FIXED_NOW,
+    )
+    call = AiCall(
+        job="recommender",
+        provider_kind="anthropic",
+        model="sample-big",
+        prompt_name="profile_update",
+        prompt_version="abc123",
+        prompt_hash="0" * 64,
+        request="prompt",
+        response="reply",
+        duration_ms=5,
+        created_at=FIXED_NOW,
+    )
+    db.add(call)
+    db.commit()
+    update = ProfileUpdate.model_validate(
+        {
+            "profile": {
+                "loved": [
+                    {
+                        "text": "Likes short, tight sessions",
+                        "tag": "stated",
+                        "games": [10],
+                        "reviews": [review.id],
+                    }
+                ],
+                "dealbreakers": [],
+                "patterns": [],
+                "hunches": [],
+                "open_questions": [],
+            },
+            "changelog": "Learned from new reviews.",
+        }
+    )
+    return save_version(
+        db,
+        profile,
+        update,
+        source_ids=[review.id],
+        call=call,
+        refresh_run_id=None,
+        now=FIXED_NOW,
+    )
+
+
+@pytest.fixture
+def research_run(db):
+    """A research run that is running, with no lanes ticked for five more."""
+    return create_run(db, set(), FIXED_NOW)
