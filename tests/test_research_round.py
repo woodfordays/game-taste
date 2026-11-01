@@ -13,6 +13,8 @@ from fakes import (
     fill_lane,
     judged,
     messages,
+    save_facts,
+    store_data,
     two_version,
     verdicts,
 )
@@ -44,8 +46,9 @@ def run_lane(app, run, lane=Lane.SOLO, rnd=1):
     return research_lane(job_context(app), run.id, rnd, lane)
 
 
-def earlier_rejection(db, appid, reason, solo_version, **over):
-    """A rejection of `appid` in Solo from a finished run a month ago."""
+def earlier_candidate(db, solo_version, appid, verdict, reason, *, room=5, **over):
+    """A candidate of `appid` in Solo from a finished run a month ago. With `room=0` an
+    accepted one wasn't added."""
     earlier = ResearchRun(
         status="finished", targets=[], created_at=FIXED_NOW - timedelta(days=30)
     )
@@ -53,11 +56,11 @@ def earlier_rejection(db, appid, reason, solo_version, **over):
     db.commit()
     save_judged(
         db,
-        [judged(appid, "rejected", reason, **over)],
+        [judged(appid, verdict, reason, **over)],
         run_id=earlier.id,
         round=1,
         lane=Lane.SOLO,
-        room=5,
+        room=room,
         profile_version_id=solo_version.id,
         now=FIXED_NOW - timedelta(days=30),
     )
@@ -114,7 +117,7 @@ def test_the_log_of_a_round(app, db, research_world, research_run):
     assert [tuple(e) for e in events] == [
         (1, "solo", "plan", "Asking the Recommender where to look."),
         (1, "solo", "search", "Searching the web: short cozy roguelites"),
-        (1, "solo", "search", "Found 1 games on the web."),
+        (1, "solo", "search", "Found 1 game on the web."),
         (1, "solo", "facts", "Checking Steam for 2 games."),
         (1, "solo", "propose", "The Recommender is choosing games."),
         (1, "solo", "judge", "The judge is checking 2 games."),
@@ -169,8 +172,30 @@ def test_a_lane_never_overfills(
     )
     assert surplus.verdict == "accepted" and surplus.added is False
     assert (
-        "Solo: 1 added, 0 rejected. 1 more were accepted, but the lane is full."
+        "Solo: 1 added, 0 rejected. 1 more was accepted, but the lane is full."
         in messages(db, research_run)
+    )
+
+
+def test_the_log_counts_more_than_one_game_in_the_plural(
+    app, db, research_world, research_run, solo_version, fake_steam
+):
+    fill_lane(db, Lane.SOLO, 19, solo_version)
+    fake_steam.store_hits.append({"id": 50, "name": "Party Pile"})
+    fake_steam.details[50] = store_data("Party Pile")
+    research_world["extract"]["games"].append(
+        {"name": "Party Pile", "url": "https://example.com/cozy"}
+    )
+    research_world["propose"]["proposals"].append(
+        {"appid": 50, "fits": [{"line": "L1", "how": "Rounds are short."}], "risk": "r"}
+    )
+    research_world["judge"] = verdicts(accept=[40, 50, 60])
+    run_lane(app, research_run)
+    log = messages(db, research_run)
+    assert "Found 2 games on the web." in log
+    assert "Checking Steam for 3 games." in log
+    assert (
+        "Solo: 1 added, 0 rejected. 2 more were accepted, but the lane is full." in log
     )
 
 
@@ -211,7 +236,7 @@ def test_rejected_games_are_not_offered_again_in_the_run(
 def test_an_earlier_rejection_stays_out_when_nothing_changed(
     app, db, research_world, research_run, solo_version
 ):
-    earlier_rejection(db, 40, "Too buggy at launch.", solo_version)
+    earlier_candidate(db, solo_version, 40, "rejected", "Too buggy at launch.")
     run_lane(app, research_run)  # the web search finds Cozy Crawl again
     assert (
         db.scalar(
@@ -229,7 +254,7 @@ def test_an_earlier_rejection_stays_out_when_nothing_changed(
 def test_an_earlier_rejection_stays_out_of_the_backlog_too(
     app, db, research_world, research_run, solo_version, fake_ai
 ):
-    earlier_rejection(db, 60, "Runs are too long.", solo_version)
+    earlier_candidate(db, solo_version, 60, "rejected", "Runs are too long.")
     run_lane(app, research_run)
     [plan] = prompts(fake_ai, "research_plan")
     assert "Old Crate" not in plan  # not offered, so the plan's pick of 60 is dropped
@@ -246,8 +271,13 @@ def test_an_earlier_rejection_stays_out_of_the_backlog_too(
 def test_an_earlier_rejection_comes_back_after_a_patch(
     app, db, research_world, research_run, solo_version, fake_steam, fake_ai
 ):
-    earlier_rejection(
-        db, 40, "Too buggy at launch.", solo_version, version=GameVersion(False, T1)
+    earlier_candidate(
+        db,
+        solo_version,
+        40,
+        "rejected",
+        "Too buggy at launch.",
+        version=GameVersion(False, T1),
     )
     fake_steam.news[40] = [
         {"title": "Patch 1.0", "date": int(T2.timestamp()), "tags": ["patchnotes"]}
@@ -308,6 +338,32 @@ def test_a_game_steam_has_no_details_for_leaves_the_pool(
     assert {c.appid for c in db.scalars(select(Candidate))} == {40}
 
 
+def test_a_game_steam_fails_to_refresh_keeps_its_last_facts(
+    app, db, research_world, research_run, solo_version, fake_steam
+):  # Review focus 2
+    eight_days_ago = FIXED_NOW - timedelta(days=8)
+    save_facts(db, 40, "Cozy Crawl", fetched_at=eight_days_ago)
+    save_facts(db, 60, "Old Crate", fetched_at=eight_days_ago)
+    # Accepted earlier while the lane had no room, so it comes back through the history.
+    earlier_candidate(db, solo_version, 40, "accepted", "Fits L1.", room=0)
+    research_world["plan"]["queries"] = []
+    fake_steam.fail_with(500)
+    run_lane(app, research_run)
+    log = messages(db, research_run)
+    stale = "Couldn't refresh Steam's details for: {}. Using the last ones saved."
+    assert stale.format("Cozy Crawl") in log  # the history scan
+    assert stale.format("Old Crate") in log  # the facts step
+    assert not any(m.startswith("Steam's details are missing") for m in log)
+    saved = {
+        c.appid: c
+        for c in db.scalars(
+            select(Candidate).where(Candidate.run_id == research_run.id)
+        )
+    }
+    assert set(saved) == {40, 60}
+    assert saved[60].facts["store"]["fetched_at"] == eight_days_ago.isoformat()
+
+
 def test_names_without_an_exact_store_match_are_reported(
     app, db, research_world, research_run
 ):
@@ -317,7 +373,7 @@ def test_names_without_an_exact_store_match_are_reported(
     run_lane(app, research_run)
     log = messages(db, research_run)
     assert "Couldn't find these on Steam: Cozy Crawl Deluxe." in log
-    assert "Found 1 games on the web." in log
+    assert "Found 1 game on the web." in log
 
 
 def test_a_steam_outage_costs_three_store_searches(
@@ -350,9 +406,9 @@ def test_a_search_failure_carries_on_with_the_backlog(
     assert run_lane(app, research_run) == LaneOutcome(
         added=0, rejected=1, cancelled=False
     )
-    assert any(
-        m.startswith("The web search failed (") for m in messages(db, research_run)
-    )
+    log = messages(db, research_run)
+    assert any(m.startswith("The web search failed (") for m in log)
+    assert "Checking Steam for 1 game." in log  # only Old Crate, from the backlog
 
 
 def test_a_cancel_before_saving_drops_the_lane(
@@ -367,6 +423,27 @@ def test_a_cancel_before_saving_drops_the_lane(
     research_world["judge_fn"] = judge_then_cancel
     assert run_lane(app, research_run).cancelled is True
     assert db.scalar(select(func.count()).select_from(Candidate)) == 0
+
+
+def test_a_cancel_during_the_last_player_lookup_drops_the_lane(
+    app, db, research_world, research_run
+):  # Review focus 3
+    two_version(db)
+    research_world["plan"][
+        "queries"
+    ] = []  # Old Crate, from the backlog, is the only one
+
+    def counts_then_cancel(prompt):
+        with app.state.session_factory() as s:
+            s.get(ResearchRun, research_run.id).cancel_requested = True
+            s.commit()
+        return counts_reply(url="https://example.com/cozy", online=(1, 1))
+
+    research_world["players"] = counts_then_cancel
+    assert run_lane(app, research_run, lane=Lane.TWO) == LaneOutcome(0, 0, True)
+    log = messages(db, research_run)
+    assert "Looking up player counts for 1 game." in log
+    assert "No candidates for Two players this round." not in log
 
 
 def test_a_cancel_before_the_lane_starts_makes_no_calls(

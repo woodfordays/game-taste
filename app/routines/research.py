@@ -8,7 +8,8 @@ it goes:
 2. Candidate history: earlier candidates from other runs that `may_return` lets back in.
 3. The plan: the Recommender picks owned backlog games and writes web searches.
 4. Web research: the searches, the games the results name, and each name's Steam app.
-5. Facts: fresh Steam facts. A game Steam has no game entry for leaves the pool.
+5. Facts: fresh Steam facts. A game Steam has no game entry for leaves the pool, and one
+   Steam fails to refresh stays on its last saved facts, with a line in the log.
 6. Players: a co-op lane looks up player counts, and then every lane leaves out the games
    that can't seat it.
 7. The Recommender proposes from the pool, and the code checks every pick.
@@ -23,6 +24,7 @@ saving, and a cancel saves nothing of the lane's round.
 """
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -60,6 +62,7 @@ from app.services.ai import StructuredReplyError
 from app.services.ai_setup import stored_ai_setup
 from app.services.game_facts import (
     MAX_STEAM_FAILURES_IN_A_ROW,
+    FactsRefresh,
     current_facts,
     ensure_game,
     refresh_store_facts,
@@ -139,18 +142,29 @@ HISTORY_BACK = "{m} of {n} earlier candidates are back for another look."
 PLANNING = "Asking the Recommender where to look."
 SEARCHING = "Searching the web: {query}"
 SEARCH_FAILED = "The web search failed ({message}). Carrying on without it."
-FOUND_ON_WEB = "Found {n} games on the web."
 NOT_ON_STEAM = "Couldn't find these on Steam: {names}."
-CHECKING_FACTS = "Checking Steam for {n} games."
 DETAILS_MISSING = "Steam's details are missing for: {names}."
-LOOKING_UP_PLAYERS = "Looking up player counts for {n} games."
+DETAILS_STALE = (
+    "Couldn't refresh Steam's details for: {names}. Using the last ones saved."
+)
 LEFT_OUT = "Left out {name}: {phrase}."
 NO_CANDIDATES = "No candidates for {lane} this round."
 PROPOSING = "The Recommender is choosing games."
 JUDGING = "The judge is checking {n} games."
 SAVED = "{lane}: {added} added, {rejected} rejected."
-LANE_FULL = " {k} more were accepted, but the lane is full."
 LANE_STOPPED = "{lane} stopped this round: {message}"
+
+# Copy that counts games, as (the copy for 1, the copy for any other number); see `_counted`.
+FOUND_ON_WEB = ("Found 1 game on the web.", "Found {n} games on the web.")
+CHECKING_FACTS = ("Checking Steam for 1 game.", "Checking Steam for {n} games.")
+LOOKING_UP_PLAYERS = (
+    "Looking up player counts for 1 game.",
+    "Looking up player counts for {n} games.",
+)
+LANE_FULL = (
+    " 1 more was accepted, but the lane is full.",
+    " {n} more were accepted, but the lane is full.",
+)
 
 # The `StructuredReplyError` reason that stops the whole run: every lane would fail alike.
 NOT_CONFIGURED = "not_configured"
@@ -226,6 +240,12 @@ def resolve_name(steam: SteamClient, name: str, region: str) -> StoreHit | None:
         if normalize_name(hit.name) == wanted:
             return hit
     return None
+
+
+def _counted(copy: tuple[str, str], n: int) -> str:
+    """The singular copy when `n` is 1, else the plural copy with `n` filled in."""
+    one, many = copy
+    return one if n == 1 else many.format(n=n)
 
 
 def _distinct(results: list[SearchResult]) -> list[SearchResult]:
@@ -321,10 +341,10 @@ class _LaneRound:
         self.check_facts()
         self.check_cancel()
         self.check_players()
+        self.check_cancel()
         if not self.pool:
             self.event(STEP_SKIPPED, NO_CANDIDATES.format(lane=self.label))
             return LaneOutcome(0, 0, False)
-        self.check_cancel()
         proposals, recommender_call = self.propose()
         rulings: list[Ruling] = []
         judge_call = None
@@ -411,7 +431,9 @@ class _LaneRound:
         scan = [c for c in earlier if c.appid not in self.skip][:HISTORY_SCAN]
         if scan:
             appids = [candidate.appid for candidate in scan]
-            refresh_store_facts(db, self.steam, appids, self.region, self.now)
+            refreshed = refresh_store_facts(
+                db, self.steam, appids, self.region, self.now
+            )
             facts = current_facts(db, appids)
             kept = [
                 candidate
@@ -431,6 +453,7 @@ class _LaneRound:
                     games[appid], facts[appid], CANDIDATE_HISTORY, history[appid]
                 )
             self.event(STEP_HISTORY, HISTORY_BACK.format(m=len(kept), n=len(scan)))
+            self.note_stale(refreshed, [self.pool[appid] for appid in kept_ids])
         self.skip |= {candidate.appid for candidate in earlier} - set(self.pool)
 
     def history_of(self, appids: list[int]) -> dict[int, list[dict]]:
@@ -543,7 +566,7 @@ class _LaneRound:
             **self.ai(),
         )
         added, missing = self.add_web_games(found.games)
-        self.event(STEP_SEARCH, FOUND_ON_WEB.format(n=added))
+        self.event(STEP_SEARCH, _counted(FOUND_ON_WEB, added))
         if missing:
             self.event(STEP_PROBLEM, NOT_ON_STEAM.format(names=", ".join(missing)))
 
@@ -590,11 +613,15 @@ class _LaneRound:
 
     def check_facts(self) -> None:
         """Fetch the facts the backlog and web games are missing, move them into the pool,
-        and leave out every game Steam has no game entry for."""
+        and leave out every game Steam has no game entry for. A game whose refresh fails
+        stays on its last saved facts if they are a game's."""
         db = self.db
+        refreshed = FactsRefresh()
         if self.found:
-            self.event(STEP_FACTS, CHECKING_FACTS.format(n=len(self.found)))
-            refresh_store_facts(db, self.steam, list(self.found), self.region, self.now)
+            self.event(STEP_FACTS, _counted(CHECKING_FACTS, len(self.found)))
+            refreshed = refresh_store_facts(
+                db, self.steam, list(self.found), self.region, self.now
+            )
         facts = current_facts(db, [*self.pool, *self.found])
         for appid, item in self.pool.items():
             item.facts = facts[appid]
@@ -604,9 +631,21 @@ class _LaneRound:
         missing = [item for item in self.pool.values() if not item.facts.is_game]
         for item in missing:
             del self.pool[item.game.appid]
+        self.note_stale(refreshed, self.pool.values())
         if missing:
             names = ", ".join(item.game.name for item in missing)
             self.event(STEP_PROBLEM, DETAILS_MISSING.format(names=names))
+
+    def note_stale(self, refreshed: FactsRefresh, items: Iterable[PoolGame]) -> None:
+        """Log, in one line, the games among `items` that Steam failed to refresh but whose
+        last saved facts keep them in the pool. A game that drops out has its own line."""
+        stale = [
+            item.game.name
+            for item in items
+            if item.game.appid in refreshed.problems and item.facts.is_game
+        ]
+        if stale:
+            self.event(STEP_PROBLEM, DETAILS_STALE.format(names=", ".join(stale)))
 
     # --- 6. players -------------------------------------------------------------------
 
@@ -633,7 +672,7 @@ class _LaneRound:
         ]
         if not wanted:
             return
-        self.event(STEP_PLAYERS, LOOKING_UP_PLAYERS.format(n=len(wanted)))
+        self.event(STEP_PLAYERS, _counted(LOOKING_UP_PLAYERS, len(wanted)))
         for item in wanted:
             self.check_cancel()
             try:
@@ -758,6 +797,6 @@ class _LaneRound:
         rejected = sum(1 for candidate in saved if candidate.verdict != ACCEPTED)
         message = SAVED.format(lane=self.label, added=added, rejected=rejected)
         if surplus := len(saved) - added - rejected:
-            message += LANE_FULL.format(k=surplus)
+            message += _counted(LANE_FULL, surplus)
         self.event(STEP_SAVED, message)
         return LaneOutcome(added, rejected, False)
