@@ -421,7 +421,7 @@ def test_not_configured_names_the_job_and_calls_nothing(
             run_ref=None,
             now=FIXED_NOW,
         )
-    assert err.value.reason == "not_configured"
+    assert err.value.reason == "not_configured" and err.value.job is Job.JUDGE
     assert (
         err.value.message
         == "Set up the Review judge model in Settings, then refresh again."

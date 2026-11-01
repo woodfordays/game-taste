@@ -442,12 +442,14 @@ class StructuredReplyError(AIError):
 
     `reason` is "not_configured", "truncated", "unusable" or "call_failed". `message`, also
     the text of the exception, says what happened and what to do, in words fit to show.
+    `job` is the job whose model was asked, when known, so a caller can word its own copy.
     """
 
-    def __init__(self, reason: str, message: str) -> None:
+    def __init__(self, reason: str, message: str, *, job: Job | None = None) -> None:
         super().__init__(message)
         self.reason = reason
         self.message = message
+        self.job = job
 
 
 _CALL_FAILED_CHARS = 200
@@ -523,6 +525,7 @@ def complete_json(
         raise StructuredReplyError(
             "not_configured",
             f"Set up the {JOB_LABELS[job]} model in Settings, then refresh again.",
+            job=job,
         )
     cfg, model = config
     base = prompt.render(**context)
@@ -556,12 +559,14 @@ def complete_json(
                 "call_failed",
                 f"The model didn't answer: {detail}. "
                 f"Check the {JOB_LABELS[job]} provider in Settings, then try again.",
+                job=job,
             ) from err
         if completion.stop_reason == "length":
             raise StructuredReplyError(
                 "truncated",
                 "The model's reply was cut off. "
                 "Pick a model with a larger output limit in Settings.",
+                job=job,
             )
         try:
             return _parse_reply(completion.text, schema), completion.call_id
@@ -571,4 +576,5 @@ def complete_json(
         "unusable",
         "The model's reply wasn't in the expected format. "
         f"Try again, or pick a different {JOB_LABELS[job]} model in Settings.",
+        job=job,
     )

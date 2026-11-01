@@ -108,6 +108,7 @@ from app.services.research_runs import (
     add_event,
     end_run,
     lanes_short,
+    model_blocker,
     research_blockers,
     run_targets,
 )
@@ -308,7 +309,8 @@ def run_research(ctx: JobContext, job_id: int) -> None:
 
     Every ending goes through `end_run`. A cancel that a lane finds ends the run as
     cancelled, keeping what the judge accepted before it, and so does one found at the end.
-    A model that isn't set up fails the run with its message. Any other exception fails
+    A model found not set up mid-run fails the run with that model's blocker line (see
+    `research_blockers`), and the job is done. Any other exception fails
     the run with its type only, since the message might hold a secret, and is raised again
     so that the job fails too.
     """
@@ -329,7 +331,7 @@ def run_research(ctx: JobContext, job_id: int) -> None:
         status, message = _run_segment(ctx, run_id, job_id)
     except Exception as exc:
         if isinstance(exc, StructuredReplyError) and exc.reason == NOT_CONFIGURED:
-            _end_run(ctx, run_id, FAILED, exc.message)
+            _end_run(ctx, run_id, FAILED, _unset_model_message(ctx, exc))
             return
         _end_run(ctx, run_id, FAILED, RUN_STOPPED.format(kind=type(exc).__name__))
         raise
@@ -405,6 +407,17 @@ def _first_segment(ctx: JobContext, run_id: int, job_id: int) -> None:
         for target in targets:
             if target.note is not None:
                 add_event(db, run_id, STEP_SKIPPED, target.note, now, lane=target.lane)
+
+
+def _unset_model_message(ctx: JobContext, err: StructuredReplyError) -> str:
+    """What a run says when a model turns out not to be set up mid-run: the same line as
+    the blocker for the job whose call found it. An error that doesn't name its job gets
+    the first blocker found now, or its own message if setup has been fixed since."""
+    if err.job is not None:
+        return model_blocker(err.job)
+    with ctx.session_factory() as db:
+        blockers = research_blockers(db, ctx.vault)
+    return blockers[0] if blockers else err.message
 
 
 def _has_profile_version(db: Session, lane: Lane) -> bool:

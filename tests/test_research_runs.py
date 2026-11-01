@@ -43,6 +43,9 @@ from app.services.reviews import Lane, ReviewForm, publish
 from app.services.settings import delete_setting
 
 CANCELLED_KEPT = "Cancelled. Games the judge accepted before this were kept."
+RUNNING_REFUSAL = (
+    "Research is already running. Wait for it to pause or finish, or cancel it."
+)
 
 
 def research(app, db, add_five=()):
@@ -284,8 +287,23 @@ def test_a_running_run_is_named_before_a_full_house(
     start_research(db, app.state.vault, set(), FIXED_NOW)
     for lane in Lane:
         fill_lane(db, lane, 20, solo_version)
-    with pytest.raises(ResearchError, match="Research is already running."):
+    with pytest.raises(ResearchError) as err:
         start_research(db, app.state.vault, set(), FIXED_NOW)
+    assert err.value.message == RUNNING_REFUSAL
+
+
+def test_a_paused_run_is_named_when_starting_again(app, db, research_world):
+    research_world["judge"] = verdicts(reject={40: "No.", 60: "No."})
+    run = research(app, db)
+    assert run.status == "paused"
+    with pytest.raises(ResearchError) as err:
+        start_research(db, app.state.vault, set(), FIXED_NOW)
+    assert (
+        err.value.message
+        == "Research is paused. Run one more round, stop it or cancel it first."
+    )
+    assert db.scalar(select(func.count()).select_from(ResearchRun)) == 1
+    assert research_jobs(db) == ["done"]
 
 
 def test_two_starts_racing_on_two_threads_give_one_run(
@@ -317,7 +335,7 @@ def test_two_starts_racing_on_two_threads_give_one_run(
         thread.start()
     for thread in threads:
         thread.join()
-    assert sorted(outcomes) == ["Research is already running.", "started"]
+    assert sorted(outcomes) == [RUNNING_REFUSAL, "started"]
     with app.state.session_factory() as s:
         assert s.scalar(select(func.count()).select_from(ResearchRun)) == 1
         assert research_jobs(s) == ["queued"]
@@ -561,19 +579,43 @@ def test_a_continue_queues_a_job_even_while_the_last_one_is_still_marked_running
 # --- failures ------------------------------------------------------------------------
 
 
-def test_a_model_unset_mid_run_fails_the_run_with_its_message(
-    app, db, research_world, monkeypatch
-):
-    message = "Set up the Review judge model in Settings, then refresh again."
+def test_a_model_unset_mid_run_fails_the_run_with_the_research_copy(
+    app, db, research_world, fake_ai
+):  # Ruling 16
+    # The judge's model goes away while the Recommender is proposing, after the run
+    # checked its blockers, so the judge's call is the one that finds it unset.
+    recommender = fake_ai.replies["sample-big"]
 
-    def not_configured(*args):
-        raise StructuredReplyError("not_configured", message)
+    def propose_then_unset_the_judge(prompt):
+        if prompt.startswith("# research_propose"):
+            with app.state.session_factory() as s:
+                s.execute(delete(JobAssignment).where(JobAssignment.job == "judge"))
+                s.commit()
+        return recommender(prompt)
 
-    monkeypatch.setattr(research_module, "research_lane", not_configured)
+    fake_ai.replies["sample-big"] = propose_then_unset_the_judge
     run = research(app, db)
+    message = "Set up the Review judge model in Settings, then run research again."
     assert (run.status, run.error, run.finished_at) == ("failed", message, FIXED_NOW)
     assert messages(db, run)[-1] == message
     assert research_jobs(db) == ["done"]
+
+
+def test_an_unset_model_error_without_its_job_falls_back_to_the_blockers(
+    app, db, research_world, monkeypatch
+):  # Ruling 16
+    def not_configured(*args):
+        with app.state.session_factory() as s:
+            s.execute(delete(JobAssignment).where(JobAssignment.job == "everyday"))
+            s.commit()
+        raise StructuredReplyError("not_configured", "Set up the model.")
+
+    monkeypatch.setattr(research_module, "research_lane", not_configured)
+    run = research(app, db)
+    assert (run.status, run.error) == (
+        "failed",
+        "Set up the Everyday tasks model in Settings, then run research again.",
+    )
 
 
 def test_an_unexpected_error_is_logged_on_the_run(app, db, research_world, monkeypatch):

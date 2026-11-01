@@ -60,7 +60,10 @@ CANCEL = "cancel"
 
 SET_UP_MODEL = "Set up the {label} model in Settings, then run research again."
 ADD_TAVILY_KEY = "Add a Tavily key in Settings, then run research again."
-ALREADY_RUNNING = "Research is already running."
+ALREADY_RUNNING = (
+    "Research is already running. Wait for it to pause or finish, or cancel it."
+)
+ALREADY_PAUSED = "Research is paused. Run one more round, stop it or cancel it first."
 EVERY_LANE_FULL = (
     f"Every lane already has {TARGET} recommended games. "
     f"Tick a lane to add {TOP_UP} more."
@@ -192,13 +195,18 @@ def research_blockers(db: Session, vault: Vault) -> list[str]:
     for each of the Recommender, the Review judge and Everyday tasks, then the Tavily key.
     Empty when research can run."""
     blockers = [
-        SET_UP_MODEL.format(label=JOB_LABELS[job])
+        model_blocker(job)
         for job in RESEARCH_JOBS
         if job_config(db, vault, job) is None
     ]
     if not stored_ai_setup(db, vault).tavily_key:
         blockers.append(ADD_TAVILY_KEY)
     return blockers
+
+
+def model_blocker(job: AiJob) -> str:
+    """The line asking for `job`'s model to be set up before research runs again."""
+    return SET_UP_MODEL.format(label=JOB_LABELS[job])
 
 
 def start_research(
@@ -208,15 +216,18 @@ def start_research(
     worker.
 
     Raises `ResearchError`, saving nothing, with the first of the `research_blockers`, then
-    while a run is running or paused, then when no lane gets a target (every lane is full
-    and none is ticked for 5 more).
+    while a run is running or paused (saying which, and what to do about it), then when no
+    lane gets a target (every lane is full and none is ticked for 5 more).
     """
     blockers = research_blockers(db, vault)
     if blockers:
         raise ResearchError(blockers[0])
     with _start_lock:
-        if active_run(db) is not None:
-            raise ResearchError(ALREADY_RUNNING)
+        active = active_run(db)
+        if active is not None:
+            raise ResearchError(
+                ALREADY_RUNNING if active.status == RUNNING else ALREADY_PAUSED
+            )
         targets = plan_targets(recommended_counts(db), add_five)
         if all(target.target is None for target in targets):
             raise ResearchError(EVERY_LANE_FULL)
