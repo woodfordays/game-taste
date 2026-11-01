@@ -129,6 +129,11 @@ class FakeSteam:
     `.owned` is the `games` list GetOwnedGames returns (empty means a private
     profile, which Steam answers with an empty `response`). `.vanity` maps a vanity
     name to a SteamID64, and `.store_hits` is the store search `items` list.
+    `.details` maps an appid to the `data` object of its store entry (see
+    `store_data`); None, or an appid left out, is an entry the store doesn't have.
+    `.review_summaries` maps an appid to its review `query_summary`, and `.news` an
+    appid to its `newsitems`. An appid left out of those gets 100 mostly good
+    reviews, and no news.
     `.requests` holds every request the client made. `.fail_with(401)` answers every
     request with that status, `.fail_with(exc)` raises `exc` from every request, and
     `.fail_with(None)` clears it.
@@ -151,6 +156,9 @@ class FakeSteam:
         ]
         self.vanity: dict[str, str] = {}
         self.store_hits: list[dict] = []
+        self.details: dict[int, dict | None] = {}
+        self.review_summaries: dict[int, dict] = {}
+        self.news: dict[int, list[dict]] = {}
         self.requests: list[httpx.Request] = []
         self._failure: int | Exception | None = None
 
@@ -184,7 +192,79 @@ class FakeSteam:
             return httpx.Response(
                 200, json={"total": len(self.store_hits), "items": self.store_hits}
             )
+        if path == "/api/appdetails":
+            appid = int(request.url.params["appids"])
+            data = self.details.get(appid)
+            entry = (
+                {"success": False} if data is None else {"success": True, "data": data}
+            )
+            return httpx.Response(200, json={str(appid): entry})
+        if path.startswith("/appreviews/"):
+            appid = int(path.removeprefix("/appreviews/"))
+            summary = self.review_summaries.get(appid, DEFAULT_REVIEW_SUMMARY)
+            return httpx.Response(200, json={"success": 1, "query_summary": summary})
+        if path == "/ISteamNews/GetNewsForApp/v2/":
+            appid = int(request.url.params["appid"])
+            items = self.news.get(appid, [])
+            return httpx.Response(
+                200,
+                json={
+                    "appnews": {"appid": appid, "newsitems": items, "count": len(items)}
+                },
+            )
         return httpx.Response(404)
+
+
+DEFAULT_REVIEW_SUMMARY = {
+    "review_score_desc": "Very Positive",
+    "total_positive": 90,
+    "total_negative": 10,
+    "total_reviews": 100,
+}
+
+
+def store_data(
+    name: str,
+    *,
+    categories: tuple[str, ...] = ("Single-player",),
+    early_access: bool = False,
+    is_free: bool = False,
+    price_cents: int | None = 1999,
+    type: str = "game",
+    coming_soon: bool = False,
+    release_date: str = "1 Jan, 2025",
+) -> dict:
+    """A store entry's `data` object, in the shape `api/appdetails` sends.
+
+    There is no `price_overview` when the game is free or `price_cents` is None, as for
+    a game that isn't out yet. Early Access is a genre, as Steam has it.
+    """
+    genres = [{"id": "1", "description": "Action"}]
+    if early_access:
+        genres.append({"id": "70", "description": "Early Access"})
+    data = {
+        "type": type,
+        "name": name,
+        "is_free": is_free,
+        "short_description": f"About {name}.",
+        "developers": ["Sample Studio"],
+        "categories": [
+            {"id": index, "description": description}
+            for index, description in enumerate(categories, start=1)
+        ],
+        "genres": genres,
+        "release_date": {"coming_soon": coming_soon, "date": release_date},
+    }
+    if not is_free and price_cents is not None:
+        data["price_overview"] = {
+            "currency": "USD",
+            "initial": price_cents,
+            "final": price_cents,
+            "discount_percent": 0,
+            "initial_formatted": "",
+            "final_formatted": f"${price_cents / 100:.2f}",
+        }
+    return data
 
 
 # A complete, valid "Connect your AI" form: two providers, three jobs and a Tavily key.
