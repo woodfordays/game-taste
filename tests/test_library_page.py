@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, func, select
 
 from app.models import CurrentlyPlayingChange, Game, PlaytimeSnapshot, Review
+from app.services.game_facts import ensure_game
 from app.services.library import (
     add_store_game,
     artwork_url,
@@ -796,6 +797,23 @@ def test_search_escapes_what_it_shows(onboarded_client, fake_steam):
     assert "<b>zzz" not in none and "&lt;b&gt;zzz" in none
 
 
+def test_a_game_only_research_knows_can_still_be_added(
+    onboarded_client, fake_steam, db
+):
+    ensure_game(db, 30, "Demo Dungeon", FIXED_NOW)
+    ensure_game(db, 31, "Demo Dungeon 2", FIXED_NOW)
+    add_store_game(db, 31, "Demo Dungeon 2", FIXED_NOW)
+    fake_steam.store_hits = [
+        {"id": 30, "name": "Demo Dungeon"},
+        {"id": 31, "name": "Demo Dungeon 2"},
+    ]
+    text = html.unescape(onboarded_client.get("/library/search?term=demo").text)
+    hits = re.findall(r'<li id="store-hit-\d+".*?</li>', text, re.S)
+    assert len(hits) == 2
+    assert 'name="appid" value="30"' in hits[0] and "In your library" not in hits[0]
+    assert "In your library" in hits[1] and "<form" not in hits[1]
+
+
 # --- adding a game ----------------------------------------------------------
 
 
@@ -814,6 +832,26 @@ def test_adding_a_game_lists_it_and_says_so(onboarded_client, db):
         "store_search",
         None,
     )
+
+
+def test_adding_a_game_only_research_knows_puts_it_in_the_library(
+    onboarded_client, fake_steam, db
+):
+    ensure_game(db, 30, "Demo Dungeon", FIXED_NOW)
+    assert "Demo Dungeon" not in page(onboarded_client)
+    r = onboarded_client.post(
+        "/library/games", data={"appid": "30", "name": "Demo Dungeon"}
+    )
+    text = html.unescape(r.text)
+    assert "Added Demo Dungeon to your library." in text
+    assert "already in your library" not in text
+    assert row(text, 30) and "Demo Dungeon" in row(text, 30)
+    db.expire_all()
+    assert db.get(Game, 30).source == "store_search"
+    assert names(db) == ["Demo Dungeon"]
+    # And now the search shows it as added.
+    fake_steam.store_hits = [{"id": 30, "name": "Demo Dungeon"}]
+    assert "In your library" in onboarded_client.get("/library/search?term=demo").text
 
 
 def test_an_added_game_is_marked_as_not_owned(onboarded_client, synced_games):

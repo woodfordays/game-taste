@@ -107,6 +107,33 @@ def test_steam_down_costs_three_calls(db, steam_client, fake_steam):  # Review f
     )
 
 
+def test_steam_down_blames_only_the_games_that_needed_a_fetch(
+    db, steam_client, fake_steam
+):  # Review focus 2
+    for appid in range(100, 105):
+        ensure_game(db, appid, f"Sample {appid}", FIXED_NOW)
+    # 101 is current, 102 is a week old, 103 is not in the store (so it has no reviews or
+    # news to want), and 104 has a store fact but no reviews or news yet.
+    save_facts(db, 101, "Sample 101")
+    save_facts(db, 102, "Sample 102", fetched_at=FIXED_NOW - timedelta(days=8))
+    for appid, data in ((103, store_fact_data(None, "us")), (104, {"available": True})):
+        db.add(
+            GameFact(
+                appid=appid,
+                kind=STORE,
+                data=data,
+                source_url=None,
+                fetched_at=FIXED_NOW,
+            )
+        )
+    db.commit()
+    fake_steam.fail_with(500)
+    result = refresh_store_facts(db, steam_client, range(100, 105), "us", FIXED_NOW)
+    # The first game used the three calls: it has nothing, and 102 and 104 are waiting.
+    assert len(fake_steam.requests) == 3
+    assert result.problems == {100: NO_RESPONSE, 102: NO_RESPONSE, 104: NO_RESPONSE}
+
+
 @pytest.mark.parametrize(
     "earlier,now,updated",
     [

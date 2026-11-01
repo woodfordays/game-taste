@@ -292,6 +292,16 @@ def _is_stale(fact: Fact | None, now: datetime) -> bool:
     return fact is None or now - fact.fetched_at > FACTS_MAX_AGE
 
 
+def _needs_fetch(facts: GameFacts, now: datetime) -> bool:
+    """Whether a refresh would ask Steam for anything for this game: its store fact is
+    missing or old, or the store has the game and its reviews or news are."""
+    if facts.store is None or _is_stale(facts.store, now):
+        return True
+    if facts.store.data.get("available") is False:
+        return False
+    return _is_stale(facts.reviews, now) or _is_stale(facts.news, now)
+
+
 def _fetch(steam: SteamClient, kind: str, appid: int, region: str) -> dict:
     if kind == STORE:
         return store_fact_data(steam.app_details(appid, region), region)
@@ -314,7 +324,8 @@ def refresh_store_facts(
     `store` fact that says so, and then that game's reviews and news aren't asked for.
     When Steam fails a call, the game's old snapshot stays current and the reason goes in
     `problems`. After `MAX_STEAM_FAILURES_IN_A_ROW` failed calls in a row it stops
-    asking, and every game left gets the "didn't respond" problem, so an outage costs a
+    asking, and every game left that still needed something gets the "didn't respond"
+    problem (one whose facts are all current has nothing to report), so an outage costs a
     few calls and not one for every game. Commits after each game.
     """
     wanted = list(dict.fromkeys(appids))
@@ -324,7 +335,8 @@ def refresh_store_facts(
     for position, appid in enumerate(wanted):
         if failures >= MAX_STEAM_FAILURES_IN_A_ROW:
             for left in wanted[position:]:
-                result.problems[left] = NO_RESPONSE
+                if _needs_fetch(current[left], now):
+                    result.problems[left] = NO_RESPONSE
             break
         facts = current[appid]
         # None until a store fact says. An unavailable entry has no reviews or news.

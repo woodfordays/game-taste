@@ -10,6 +10,7 @@ from starlette.datastructures import FormData
 
 from app.db import get_db
 from app.models import Game
+from app.services.game_facts import SOURCE_RESEARCH
 from app.services.library import (
     SORT_KEYS,
     add_store_game,
@@ -170,9 +171,13 @@ def library_search(request: Request, term: str = "", db: Session = Depends(get_d
             context["error"] = str(failure)
         else:
             context["hits"] = hits
+            # A game research brought in is not in the library until it is added.
             context["known"] = set(
                 db.scalars(
-                    select(Game.appid).where(Game.appid.in_([h.appid for h in hits]))
+                    select(Game.appid).where(
+                        Game.appid.in_([h.appid for h in hits]),
+                        Game.source != SOURCE_RESEARCH,
+                    )
                 )
             )
     return render(request, "partials/store_results.html", **context)
@@ -200,7 +205,8 @@ def library_add_game(
     if appid is None or not name.strip():
         toast = Toast(ADD_INCOMPLETE, "danger")
     else:
-        known = db.get(Game, appid) is not None
+        existing = db.get(Game, appid)
+        known = existing is not None and existing.source != SOURCE_RESEARCH
         game = add_store_game(db, appid, name, request.app.state.services.clock())
         added = StoreHit(appid, name)
         toast = Toast(
