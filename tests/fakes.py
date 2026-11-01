@@ -6,9 +6,18 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import GameFact
+from app.models import (
+    AiCall,
+    GameFact,
+    ProfileVersion,
+    ResearchEvent,
+    ResearchRun,
+    Review,
+    ReviewVersion,
+)
 from app.services.ai import Completion, ProviderConfig, ProviderKind
 from app.services.game_facts import (
     NEWS,
@@ -17,9 +26,19 @@ from app.services.game_facts import (
     STORE,
     Fact,
     GameFacts,
+    GameVersion,
     ensure_game,
     store_fact_data,
 )
+from app.services.profiles import (
+    ProfileTarget,
+    ProfileUpdate,
+    ensure_profile,
+    lane_key,
+    save_version,
+)
+from app.services.queue import JudgedProposal, save_judged
+from app.services.reviews import LANE_LABELS, Lane, ReviewForm, publish
 from app.services.steam import parse_app_details
 
 # The moment every test's clock stands at, and two patch dates before it.
@@ -414,3 +433,164 @@ def save_facts(db: Session, appid: int, name: str, **same) -> GameFacts:
             )
     db.commit()
     return facts
+
+
+# --- research -----------------------------------------------------------------------
+
+
+def counts_reply(url="https://example.com/sample-quest", online=(1, 4), local=None):
+    """A `player_counts` reply, as JSON text: online and local co-op as (min, max) or
+    None, no competitive count, and `url` as the source."""
+    rng = lambda r: {"min": r[0], "max": r[1]} if r else None
+    return json.dumps(
+        {
+            "online_coop": rng(online),
+            "local_coop": rng(local),
+            "competitive": None,
+            "source_url": url,
+        }
+    )
+
+
+def judged(appid, verdict="accepted", reason="Fits short sessions.", **over):
+    """A `JudgedProposal` found by web research that cites the Solo line, with the
+    verdict and reason given. Any field can be changed by keyword."""
+    base = {
+        "appid": appid,
+        "source": "web_research",
+        "fits": [
+            {
+                "section": "loved",
+                "text": "Likes short, tight sessions",
+                "tag": "stated",
+                "how": "Short runs.",
+            }
+        ],
+        "risk": "Might be too light.",
+        "version": GameVersion(False, None),
+        "facts": {},
+        "verdict": verdict,
+        "reason": reason,
+        "list_rejected": False,
+        "recommender_call_id": None,
+        "judge_call_id": None,
+    }
+    return JudgedProposal(**(base | over))
+
+
+def verdicts(accept=(), reject=None) -> dict:
+    """A `research_judge` reply: each appid in `accept` accepted for "Fits L1.", and each
+    one in `reject` (appid to reason) rejected for its reason."""
+    return {
+        "verdicts": [
+            {"appid": appid, "accept": True, "reason": "Fits L1."} for appid in accept
+        ]
+        + [
+            {"appid": appid, "accept": False, "reason": reason}
+            for appid, reason in (reject or {}).items()
+        ],
+        "reject_all": None,
+    }
+
+
+def fill_lane(db: Session, lane: Lane, n: int, profile_version: ProfileVersion) -> None:
+    """Give the lane `n` recommended games: games 100 and up, not owned, each with an
+    accepted and added candidate from a finished run of its own, a month before
+    FIXED_NOW."""
+    then = FIXED_NOW - timedelta(days=30)
+    run = ResearchRun(status="finished", targets=[], created_at=then)
+    db.add(run)
+    db.commit()
+    appids = range(100, 100 + n)
+    for appid in appids:
+        ensure_game(db, appid, f"Sample Filler {appid}", then)
+    save_judged(
+        db,
+        [judged(appid) for appid in appids],
+        run_id=run.id,
+        round=1,
+        lane=lane,
+        room=n,
+        profile_version_id=profile_version.id,
+        now=then,
+    )
+
+
+def messages(db: Session, run: ResearchRun) -> list[str]:
+    """The run's progress log, oldest first."""
+    return list(
+        db.scalars(
+            select(ResearchEvent.message)
+            .where(ResearchEvent.run_id == run.id)
+            .order_by(ResearchEvent.id)
+        )
+    )
+
+
+def lane_version(
+    db: Session, lane: Lane, review: ReviewVersion, text: str
+) -> ProfileVersion:
+    """Save the lane's profile version, learned from `review`, with one stated line under
+    `loved` (`text`) that cites the review and its game. The profile is created first if
+    there is none."""
+    profile = ensure_profile(
+        db,
+        ProfileTarget(lane_key(lane), "lane", lane, None, LANE_LABELS[lane]),
+        FIXED_NOW,
+    )
+    call = AiCall(
+        job="recommender",
+        provider_kind="anthropic",
+        model="sample-big",
+        prompt_name="profile_update",
+        prompt_version="abc123",
+        prompt_hash="0" * 64,
+        request="prompt",
+        response="reply",
+        duration_ms=5,
+        created_at=FIXED_NOW,
+    )
+    db.add(call)
+    db.commit()
+    appid = db.scalar(select(Review.appid).where(Review.id == review.review_id))
+    update = ProfileUpdate.model_validate(
+        {
+            "profile": {
+                "loved": [
+                    {
+                        "text": text,
+                        "tag": "stated",
+                        "games": [appid],
+                        "reviews": [review.id],
+                    }
+                ],
+                "dealbreakers": [],
+                "patterns": [],
+                "hunches": [],
+                "open_questions": [],
+            },
+            "changelog": "Learned from new reviews.",
+        }
+    )
+    return save_version(
+        db,
+        profile,
+        update,
+        source_ids=[review.id],
+        call=call,
+        refresh_run_id=None,
+        now=FIXED_NOW,
+    )
+
+
+def two_version(db: Session) -> ProfileVersion:
+    """The Two players profile's version 1, learned from a published Two players review of
+    Test Tactics (appid 20), with one stated line (L1), "Likes planning turns together"."""
+    review = publish(
+        db,
+        20,
+        Lane.TWO,
+        ReviewForm(rating=7, text="Planning every turn together is the fun part."),
+        FIXED_NOW,
+    )
+    return lane_version(db, Lane.TWO, review, "Likes planning turns together")

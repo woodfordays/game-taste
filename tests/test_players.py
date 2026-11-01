@@ -3,7 +3,7 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
-from fakes import FIXED_NOW, by_prompt, facts_for
+from fakes import FIXED_NOW, by_prompt, counts_reply, facts_for
 from pydantic import ValidationError
 from sqlalchemy import select
 
@@ -23,18 +23,6 @@ from app.services.players import (
 )
 from app.services.reviews import Lane
 from app.services.search import SearchError
-
-
-def counts_reply(url="https://example.com/sample-quest", online=(1, 4), local=None):
-    rng = lambda r: {"min": r[0], "max": r[1]} if r else None
-    return json.dumps(
-        {
-            "online_coop": rng(online),
-            "local_coop": rng(local),
-            "competitive": None,
-            "source_url": url,
-        }
-    )
 
 
 def lookup(db, app, services, fake_search, appid=10):

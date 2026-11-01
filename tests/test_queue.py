@@ -5,7 +5,7 @@ user's choices and a progress log). Records are added, never edited: a change is
 from datetime import timedelta
 
 import pytest
-from fakes import FIXED_NOW, T1, T2, save_facts
+from fakes import FIXED_NOW, T1, T2, judged, save_facts
 from sqlalchemy import event, select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -36,7 +36,6 @@ from app.services.queue import (
     TOP_UP,
     WEB_RESEARCH,
     EntryView,
-    JudgedProposal,
     earlier_candidates,
     excluded_appids,
     lane_entries,
@@ -68,30 +67,6 @@ from app.services.research_runs import (
 from app.services.reviews import Lane
 
 # --- helpers ----------------------------------------------------------------
-
-
-def judged(appid, verdict="accepted", reason="Fits short sessions.", **over):
-    base = {
-        "appid": appid,
-        "source": "web_research",
-        "fits": [
-            {
-                "section": "loved",
-                "text": "Likes short, tight sessions",
-                "tag": "stated",
-                "how": "Short runs.",
-            }
-        ],
-        "risk": "Might be too light.",
-        "version": GameVersion(False, None),
-        "facts": {},
-        "verdict": verdict,
-        "reason": reason,
-        "list_rejected": False,
-        "recommender_call_id": None,
-        "judge_call_id": None,
-    }
-    return JudgedProposal(**(base | over))
 
 
 def save(db, run, items, *, version, lane=Lane.SOLO, room=5, round=1, now=FIXED_NOW):

@@ -1,3 +1,4 @@
+import json
 from collections.abc import Iterator
 from datetime import timedelta
 
@@ -9,25 +10,25 @@ from fakes import (
     FakeAdapterFactory,
     FakeSearchFactory,
     FakeSteam,
+    by_prompt,
+    counts_reply,
+    lane_version,
+    profile_reply,
+    store_data,
+    verdicts,
 )
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from app.auth import advance_step
 from app.main import Services, create_app
-from app.models import AiCall, Game
+from app.models import Game
 from app.services.ai_setup import AiSetup, parse_ai_form, save_ai_setup
+from app.services.game_facts import ensure_game
 from app.services.library import sync_library
 from app.services.people import add_group, add_person
-from app.services.profiles import (
-    ProfileTarget,
-    ProfileUpdate,
-    ensure_profile,
-    lane_key,
-    save_version,
-)
 from app.services.research_runs import create_run
-from app.services.reviews import LANE_LABELS, Lane, ReviewForm, publish
+from app.services.reviews import Lane, ReviewForm, publish
 from app.services.secrets import hash_password
 from app.services.settings import set_secret, set_setting
 from app.services.steam import SteamClient
@@ -210,58 +211,116 @@ def solo_version(db, games):
         ReviewForm(rating=8, text="Short runs, real choices every turn."),
         FIXED_NOW,
     )
-    profile = ensure_profile(
-        db,
-        ProfileTarget(
-            lane_key(Lane.SOLO), "lane", Lane.SOLO, None, LANE_LABELS[Lane.SOLO]
-        ),
-        FIXED_NOW,
-    )
-    call = AiCall(
-        job="recommender",
-        provider_kind="anthropic",
-        model="sample-big",
-        prompt_name="profile_update",
-        prompt_version="abc123",
-        prompt_hash="0" * 64,
-        request="prompt",
-        response="reply",
-        duration_ms=5,
-        created_at=FIXED_NOW,
-    )
-    db.add(call)
-    db.commit()
-    update = ProfileUpdate.model_validate(
-        {
-            "profile": {
-                "loved": [
-                    {
-                        "text": "Likes short, tight sessions",
-                        "tag": "stated",
-                        "games": [10],
-                        "reviews": [review.id],
-                    }
-                ],
-                "dealbreakers": [],
-                "patterns": [],
-                "hunches": [],
-                "open_questions": [],
-            },
-            "changelog": "Learned from new reviews.",
-        }
-    )
-    return save_version(
-        db,
-        profile,
-        update,
-        source_ids=[review.id],
-        call=call,
-        refresh_run_id=None,
-        now=FIXED_NOW,
-    )
+    return lane_version(db, Lane.SOLO, review, "Likes short, tight sessions")
 
 
 @pytest.fixture
 def research_run(db):
     """A research run that is running, with no lanes ticked for five more."""
     return create_run(db, set(), FIXED_NOW)
+
+
+@pytest.fixture
+def research_world(
+    db, games, saved_ai_setup, solo_version, fake_ai, fake_search, fake_steam
+) -> dict:
+    """Solo research, ready to run.
+
+    - Sample Quest (10) is reviewed in Solo, so research leaves it out, and Test Tactics
+      (20, 120 minutes) has too much playtime for the backlog. Old Crate (60) is owned
+      with 30 minutes: the backlog pick.
+    - Every web search finds one result, "Cozy picks", which names Cozy Crawl. The store
+      search resolves "Cozy Crawl" to 40, which is in the game table as research leaves
+      a game it found (not owned, not in the Library), so a test can give it earlier
+      candidates.
+    - Steam has single-player store entries for 40 ($9.99) and 60 ($4.99).
+
+    Returns `world`, whose entries the fake replies read each time they are asked, so a
+    test can change one before running:
+    - `plan`, `extract`, `propose`: the Recommender's replies (sample-big).
+    - `judge`: the judge's reply, or `judge_fn(prompt)` when that is set.
+    - `players`: the `player_counts` reply, a string or a function of the prompt.
+    - `profile`: the Everyday model's reply to anything else, a profile update that keeps
+      the Solo line and cites the Solo review.
+    """
+    db.add(
+        Game(
+            appid=60,
+            name="Old Crate",
+            owned=True,
+            playtime_minutes=30,
+            last_played_at=None,
+            source="steam_library",
+            created_at=FIXED_NOW,
+        )
+    )
+    db.commit()
+    ensure_game(db, 40, "Cozy Crawl", FIXED_NOW)
+    fake_search.responder = lambda query: {
+        "query": query,
+        "results": [
+            {
+                "title": "Cozy picks",
+                "url": "https://example.com/cozy",
+                "content": "Try Cozy Crawl.",
+            }
+        ],
+    }
+    fake_steam.store_hits = [{"id": 40, "name": "Cozy Crawl"}]
+    fake_steam.details[40] = store_data("Cozy Crawl", price_cents=999)
+    fake_steam.details[60] = store_data("Old Crate", price_cents=499)
+    [solo_review] = solo_version.content["loved"][0]["reviews"]
+    world = {
+        "plan": {"backlog": [60], "queries": ["short cozy roguelites"]},
+        "extract": {
+            "games": [{"name": "Cozy Crawl", "url": "https://example.com/cozy"}]
+        },
+        "propose": {
+            "proposals": [
+                {
+                    "appid": 40,
+                    "fits": [{"line": "L1", "how": "Runs take twenty minutes."}],
+                    "risk": "Light on depth.",
+                },
+                {
+                    "appid": 60,
+                    "fits": [{"line": "L1", "how": "Quick to pick up."}],
+                    "risk": "Slow start.",
+                },
+            ]
+        },
+        "judge": verdicts(accept=[40], reject={60: "Runs are too long."}),
+        "judge_fn": None,
+        "players": counts_reply(url="https://example.com/cozy"),
+        "profile": profile_reply(
+            loved=[
+                {
+                    "text": "Likes short, tight sessions",
+                    "tag": "stated",
+                    "games": [10],
+                    "reviews": [solo_review],
+                }
+            ]
+        ),
+    }
+
+    def judge_reply(prompt: str) -> str:
+        if world["judge_fn"] is not None:
+            return world["judge_fn"](prompt)
+        return json.dumps(world["judge"])
+
+    def players_reply(prompt: str) -> str:
+        players = world["players"]
+        return players(prompt) if callable(players) else players
+
+    fake_ai.replies["sample-big"] = by_prompt(
+        research_plan=lambda prompt: json.dumps(world["plan"]),
+        research_extract=lambda prompt: json.dumps(world["extract"]),
+        research_propose=lambda prompt: json.dumps(world["propose"]),
+    )
+    fake_ai.replies["sample-local"] = by_prompt(
+        lambda prompt: world["profile"],
+        research_judge=judge_reply,
+        player_counts=players_reply,
+    )
+    return world
