@@ -1,9 +1,15 @@
 from collections.abc import Iterator
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 import httpx
 import pytest
-from fakes import VALID, FakeAdapterFactory, FakeSearchFactory, FakeSteam
+from fakes import (
+    FIXED_NOW,
+    VALID,
+    FakeAdapterFactory,
+    FakeSearchFactory,
+    FakeSteam,
+)
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
@@ -16,8 +22,6 @@ from app.services.people import add_group, add_person
 from app.services.secrets import hash_password
 from app.services.settings import set_secret, set_setting
 from app.services.steam import SteamClient
-
-FIXED_NOW = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
 
 
 def fake_request(

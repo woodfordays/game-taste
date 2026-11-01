@@ -3,10 +3,29 @@
 import copy
 import json
 from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 
 import httpx
+from sqlalchemy.orm import Session
 
+from app.models import GameFact
 from app.services.ai import Completion, ProviderConfig, ProviderKind
+from app.services.game_facts import (
+    NEWS,
+    PLAYERS,
+    REVIEWS,
+    STORE,
+    Fact,
+    GameFacts,
+    ensure_game,
+    store_fact_data,
+)
+from app.services.steam import parse_app_details
+
+# The moment every test's clock stands at, and two patch dates before it.
+FIXED_NOW = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+T1 = FIXED_NOW - timedelta(days=10)
+T2 = FIXED_NOW - timedelta(days=1)
 
 
 class _FakeAdapter:
@@ -298,3 +317,76 @@ def profile_reply(changelog: str = "Learned from new reviews.", **sections) -> s
         raise TypeError(f"Not profile sections: {sorted(unknown)}")
     profile = {name: sections.get(name, []) for name in PROFILE_SECTIONS}
     return json.dumps({"profile": profile, "changelog": changelog})
+
+
+def facts_for(
+    appid: int,
+    name: str,
+    *,
+    players: tuple[tuple[int, int] | None, tuple[int, int] | None] | None = None,
+    fetched_at: datetime = FIXED_NOW,
+    **store_kwargs,
+) -> GameFacts:
+    """Game facts built in memory, as `current_facts` would give them.
+
+    The store fact is `store_data(name, **store_kwargs)` read the way the app reads it
+    (region "us"), the reviews are "Very Positive" over 100, and the news has no patch.
+    `players` is the (min, max) of online and local co-op, each None for no count, and
+    adds a players fact from "https://example.com/players".
+    """
+    details = parse_app_details(
+        appid, {str(appid): {"success": True, "data": store_data(name, **store_kwargs)}}
+    )
+
+    def fact(data: dict, source_url: str | None = None) -> Fact:
+        return Fact(data=data, fetched_at=fetched_at, source_url=source_url)
+
+    def counts(pair: tuple[int, int] | None) -> dict | None:
+        return None if pair is None else {"min": pair[0], "max": pair[1]}
+
+    return GameFacts(
+        appid=appid,
+        store=fact(store_fact_data(details, "us")),
+        reviews=fact(
+            {
+                "score_desc": "Very Positive",
+                "total_positive": 90,
+                "total_negative": 10,
+                "total_reviews": 100,
+            }
+        ),
+        news=fact({"latest_patch_at": None, "latest_patch_title": None}),
+        players=(
+            None
+            if players is None
+            else fact(
+                {
+                    "online_coop": counts(players[0]),
+                    "local_coop": counts(players[1]),
+                    "competitive": None,
+                },
+                "https://example.com/players",
+            )
+        ),
+    )
+
+
+def save_facts(db: Session, appid: int, name: str, **same) -> GameFacts:
+    """Write the snapshots `facts_for(appid, name, **same)` builds to `game_fact`, adding
+    the game first (through `ensure_game`) when there is no row for it. Returns the facts."""
+    facts = facts_for(appid, name, **same)
+    ensure_game(db, appid, name, facts.store.fetched_at)
+    for kind in (STORE, REVIEWS, NEWS, PLAYERS):
+        fact = getattr(facts, kind)
+        if fact is not None:
+            db.add(
+                GameFact(
+                    appid=appid,
+                    kind=kind,
+                    data=fact.data,
+                    source_url=fact.source_url,
+                    fetched_at=fact.fetched_at,
+                )
+            )
+    db.commit()
+    return facts

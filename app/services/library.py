@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models import CurrentlyPlayingChange, Game, PlaytimeSnapshot, Review
 from app.services.ai_setup import KEY_UNREADABLE
+from app.services.game_facts import SOURCE_RESEARCH
 from app.services.secrets import Vault
 from app.services.settings import (
     STORE_REGION_SETTING,
@@ -305,9 +306,10 @@ def set_currently_playing(
 def add_store_game(db: Session, appid: int, name: str, now: datetime) -> Game:
     """Add a game found in the Steam store, for one the user doesn't own.
 
-    A game that is already known is returned as it is. A new one has no playtime
-    (None, not 0), so the first Steam sync that finds it owned records its first
-    snapshot.
+    A game that is already known is returned as it is, except that one research brought
+    in becomes a store search game, which puts it in the Library. A new one has no
+    playtime (None, not 0), so the first Steam sync that finds it owned records its
+    first snapshot.
     """
     game = db.get(Game, appid)
     if game is None:
@@ -322,6 +324,8 @@ def add_store_game(db: Session, appid: int, name: str, now: datetime) -> Game:
             created_at=now,
         )
         db.add(game)
+    elif game.source == SOURCE_RESEARCH:
+        game.source = SOURCE_STORE_SEARCH
     db.commit()
     return game
 

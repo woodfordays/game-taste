@@ -133,8 +133,27 @@ class Game(Base):
     playtime_minutes: Mapped[int | None]
     last_played_at: Mapped[datetime | None]
     currently_playing: Mapped[bool] = mapped_column(default=False)
-    source: Mapped[str]  # steam_library or store_search
+    source: Mapped[str]  # steam_library, store_search or research
     created_at: Mapped[datetime]
+
+
+class GameFact(Base):
+    """One dated snapshot of something known about a game, never edited. The latest one of
+    each kind is the current fact. `kind` is store, reviews, news or players, and `data`
+    is that kind's JSON (see `app.services.game_facts`). `source_url` is the page the
+    numbers came from, for players, and None for the Steam kinds."""
+
+    __tablename__ = "game_fact"
+    __table_args__ = (
+        Index("ix_game_fact_appid_kind_fetched_at", "appid", "kind", "fetched_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    appid: Mapped[int] = mapped_column(ForeignKey("game.appid"))
+    kind: Mapped[str]
+    data: Mapped[dict] = mapped_column(JSON)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    fetched_at: Mapped[datetime]
 
 
 class PlaytimeSnapshot(Base):
