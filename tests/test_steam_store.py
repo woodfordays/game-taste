@@ -125,6 +125,15 @@ def test_early_access_by_genre_id_or_by_name():
     assert parse_app_details(40, {"40": {"success": True, "data": by_id}}).early_access
 
 
+def test_short_description_is_plain_text():
+    # Steam sends the description HTML-escaped. Templates escape again, and prompts
+    # would carry the entities, so it is stored as plain text.
+    data = store_data("Sample Quest")
+    data["short_description"] = "Build &quot;tiny&quot; towns &amp; more"
+    details = parse_app_details(10, {"10": {"success": True, "data": data}})
+    assert details.short_description == 'Build "tiny" towns & more'
+
+
 def test_missing_optional_fields_take_their_defaults():
     payload = {"10": {"success": True, "data": {"name": "Sample Quest"}}}
     assert parse_app_details(10, payload) == StoreDetails(

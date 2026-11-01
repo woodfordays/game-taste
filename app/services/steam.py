@@ -5,6 +5,7 @@ messages never include the API key or the request URL (the key travels in the qu
 string), and the exceptions underneath are dropped rather than chained.
 """
 
+import html
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -272,7 +273,8 @@ def parse_app_details(appid: int, payload: dict) -> StoreDetails | None:
         appid=appid,
         type=str(data.get("type") or ""),
         name=str(data["name"]),
-        short_description=str(data.get("short_description") or ""),
+        # Steam sends it HTML-escaped, and templates would escape it a second time.
+        short_description=html.unescape(str(data.get("short_description") or "")),
         is_free=is_free,
         price_cents=_to_int(price.get("final")),
         currency=str(price["currency"]) if price.get("currency") else None,
