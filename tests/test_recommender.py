@@ -72,50 +72,145 @@ def test_number_lines_keeps_the_tag_and_skips_open_questions():
 # --- the shape of the replies -----------------------------------------------------------
 
 
-def test_replies_are_read_leniently():
-    # Unknown fields are ignored and every list may be left out: the code checks the rest.
-    assert ResearchPlan.model_validate({"extra": 1}) == ResearchPlan()
-    assert (
-        FoundGames.model_validate({"games": [{"name": "Sample Quest", "x": 1}]})
-        .games[0]
-        .url
-        == ""
-    )
-    assert (
-        Proposals.model_validate({"proposals": [{"appid": 10}]}).proposals[0].fits == []
-    )
-    assert Verdicts.model_validate({}).reject_all is None
-
-
-def test_the_replies_keep_to_their_limits():
-    too_many = {
-        "backlog": list(range(11)),
-    }
-    for reply in (
-        too_many,
-        {"queries": ["a"] * 5},
-        {"queries": [""]},
-        {"queries": ["a" * 201]},
+def test_a_reply_needs_its_top_level_key_and_nothing_else():  # Ruling 23
+    for schema, reply in (
+        (ResearchPlan, {}),
+        (ResearchPlan, {"backlog": [60]}),
+        (ResearchPlan, {"queries": ["co-op"]}),
+        (ResearchPlan, {"backlog": [], "queries": [], "extra": 1}),
+        (FoundGames, {}),
+        (FoundGames, {"games": [], "extra": 1}),
+        (Proposals, {}),
+        (Proposals, {"proposals": [], "extra": 1}),
+        (Verdicts, {}),
+        (Verdicts, {"reject_all": "All long grinds."}),
+        (Verdicts, {"verdicts": [], "extra": 1}),
     ):
         with pytest.raises(ValidationError):
-            ResearchPlan.model_validate(reply)
-    assert ResearchPlan.model_validate(
-        {"backlog": list(range(10)), "queries": ["a" * 200] * 4}
+            schema.model_validate(reply)
+    # What an item may leave out, it still may, and `reject_all` stays optional.
+    assert Verdicts.model_validate({"verdicts": []}).reject_all is None
+    proposal = Proposals.model_validate({"proposals": [{"appid": 10}]}).proposals[0]
+    assert (proposal.fits, proposal.risk) == ([], "")
+    game = FoundGames.model_validate({"games": [{"name": "Sample Quest"}]}).games[0]
+    assert game.url == ""
+
+
+def test_an_item_of_a_reply_is_not_a_reply():  # Ruling 23
+    # Each of these is a nested object that used to pass as an empty reply.
+    for schema, item in (
+        (FoundGames, {"name": "Cozy Crawl", "url": "https://example.com/cozy"}),
+        (Proposals, {"appid": 40, "fits": [{"line": "L1", "how": "x"}], "risk": "r"}),
+        (Proposals, {"line": "L1", "how": "Short runs."}),
+        (Verdicts, {"appid": 40, "accept": True, "reason": "Fits L1."}),
+    ):
+        with pytest.raises(ValidationError):
+            schema.model_validate(item)
+
+
+def test_over_long_text_is_cut_to_its_limit():  # Ruling 23
+    plan = ResearchPlan.model_validate({"backlog": [], "queries": ["q" * 201]})
+    assert plan.queries == ["q" * 200]
+    found = FoundGames.model_validate({"games": [{"name": "n" * 201}]})
+    assert found.games[0].name == "n" * 200
+    [proposal] = Proposals.model_validate(
+        {
+            "proposals": [
+                {
+                    "appid": 40,
+                    "fits": [{"line": "L1", "how": "h" * 301}],
+                    "risk": "r" * 301,
+                }
+            ]
+        }
+    ).proposals
+    assert (proposal.fits[0].how, proposal.risk) == ("h" * 300, "r" * 300)
+    reply = Verdicts.model_validate(
+        {
+            "verdicts": [{"appid": 40, "accept": True, "reason": "x" * 301}],
+            "reject_all": "y" * 301,
+        }
     )
-    with pytest.raises(ValidationError):
-        FoundGames.model_validate({"games": [{"name": f"G{i}"} for i in range(13)]})
-    with pytest.raises(ValidationError):
-        FoundGames.model_validate({"games": [{"name": ""}]})
-    with pytest.raises(ValidationError):
-        Proposals.model_validate(
-            {"proposals": [{"appid": 10, "fits": [{"line": "L1"}] * 6}]}
-        )
-    with pytest.raises(ValidationError):
-        Proposals.model_validate({"proposals": [{"appid": 10, "risk": "r" * 301}]})
-    with pytest.raises(ValidationError):
-        Verdicts.model_validate({"verdicts": [{"appid": 10}]})  # accept is required
-    with pytest.raises(ValidationError):
-        Verdicts.model_validate({"reject_all": "r" * 301})
+    assert reply.verdicts[0].reason == "x" * 300 and reply.reject_all == "y" * 300
+
+
+def test_a_line_id_of_any_length_is_left_to_the_checks():  # Ruling 23
+    reply = Proposals.model_validate(
+        {"proposals": [{"appid": 10, "fits": [{"line": "L" * 11}], "risk": "r"}]}
+    )
+    assert reply.proposals[0].fits[0].line == "L" * 11
+    pool = {10: pool_game(10, "Sample Quest")}
+    kept, refused = check_proposals(reply, pool, number_lines(CONTENT), count=5)
+    assert kept == [] and refused == [
+        "Sample Quest was left out: it didn't name a line of the profile it fits."
+    ]
+
+
+def test_over_long_lists_keep_their_first_items():  # Ruling 23
+    plan = ResearchPlan.model_validate(
+        {"backlog": list(range(11)), "queries": [f"q{i}" for i in range(5)]}
+    )
+    assert plan.backlog == list(range(10)) and plan.queries == ["q0", "q1", "q2", "q3"]
+    found = FoundGames.model_validate({"games": [{"name": f"G{i}"} for i in range(13)]})
+    assert [game.name for game in found.games] == [f"G{i}" for i in range(12)]
+    proposals = Proposals.model_validate(
+        {
+            "proposals": [
+                {"appid": a, "fits": [{"line": f"L{i}"} for i in range(6)], "risk": "r"}
+                for a in range(26)
+            ]
+        }
+    ).proposals
+    assert [p.appid for p in proposals] == list(range(25))
+    assert [fit.line for fit in proposals[0].fits] == [f"L{i}" for i in range(5)]
+    verdicts = Verdicts.model_validate(
+        {
+            "verdicts": [
+                {"appid": a, "accept": False, "reason": "No."} for a in range(26)
+            ]
+        }
+    ).verdicts
+    assert [v.appid for v in verdicts] == list(range(25))
+
+
+def test_an_item_that_does_not_fit_is_dropped_and_the_rest_kept():  # Ruling 23
+    found = FoundGames.model_validate(
+        {
+            "games": [
+                {"name": ""},
+                {"name": "Cozy Crawl", "extra": 1},
+                {"name": "Party Pile"},
+            ]
+        }
+    )
+    assert [game.name for game in found.games] == ["Party Pile"]
+    [proposal] = Proposals.model_validate(
+        {
+            "proposals": [
+                {"appid": "forty", "fits": [{"line": "L1"}], "risk": "r"},
+                {
+                    "appid": 40,
+                    "fits": [{"how": "No line."}, {"line": "L1", "how": "Short."}],
+                    "risk": "r",
+                },
+            ]
+        }
+    ).proposals
+    assert proposal.appid == 40 and [fit.line for fit in proposal.fits] == ["L1"]
+    verdicts = Verdicts.model_validate(
+        {
+            "verdicts": [
+                {"appid": 40, "reason": "No accept given."},
+                {"appid": 50, "accept": True, "reason": "Fits L1."},
+            ]
+        }
+    ).verdicts
+    assert [(v.appid, v.accept) for v in verdicts] == [(50, True)]
+    # A dropped item takes no place in the list's limit.
+    found = FoundGames.model_validate(
+        {"games": [{"name": ""}] + [{"name": f"G{i}"} for i in range(12)]}
+    )
+    assert len(found.games) == 12
 
 
 # --- what the prompts show of a candidate -----------------------------------------------
@@ -341,7 +436,7 @@ def test_a_rejection_keeps_its_reason_and_the_first_verdict_counts():
 
 
 def test_an_empty_list_of_proposals_has_no_rulings():
-    assert apply_verdicts(Verdicts(reject_all="Nothing fits."), []) == []
+    assert apply_verdicts(Verdicts(verdicts=[], reject_all="Nothing fits."), []) == []
 
 
 # --- the four calls ---------------------------------------------------------------------
@@ -606,6 +701,33 @@ def test_a_reply_that_is_not_json_is_an_error_not_a_guess(
             now=FIXED_NOW,
         )
     assert failure.value.reason == "unusable"
+
+
+def test_a_judge_reply_that_breaks_its_shape_is_asked_again_not_read_as_empty(
+    db, app, services, fake_ai, saved_ai_setup
+):  # Ruling 23
+    # `reject_all` isn't text, so the reply isn't a `Verdicts`. Its verdict, read on its
+    # own, must not pass for one either, with no verdicts in it.
+    broken = json.dumps(
+        {
+            "verdicts": [{"appid": 40, "accept": True, "reason": "Fits L1."}],
+            "reject_all": 5,
+        }
+    )
+    fake_ai.replies["sample-local"] = by_prompt(research_judge=broken)
+    with pytest.raises(StructuredReplyError) as failure:
+        judge(
+            db,
+            app.state.vault,
+            BRIEF,
+            [],
+            [CheckedProposal(pool_game(40, "Cozy Crawl"), [], "Light.")],
+            services=services,
+            run_ref="research:1",
+            now=FIXED_NOW,
+        )
+    assert failure.value.reason == "unusable"
+    assert len([c for c in fake_ai.calls if c[1] == "sample-local"]) == 2
 
 
 # --- the prompts ------------------------------------------------------------------------

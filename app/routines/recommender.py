@@ -18,9 +18,9 @@ and `research_judge`, in `app/prompts/`, so they can be tuned without touching t
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import Session
 
 from app.models import Game
@@ -42,52 +42,107 @@ RESULT_CHARS = 600
 NO_VERDICT_REASON = "The judge gave no verdict on this game."
 
 # --- the shape of the replies -----------------------------------------------------------
+#
+# `_parse_reply` takes the first object in a reply that fits the schema, nested ones
+# included. So no schema here takes a key it doesn't name, and the key at the top of each
+# reply has no default: an item of a reply can never pass for a whole one. Past that, a
+# reply is read leniently rather than refused: text over its limit is cut to it, a list
+# keeps its first items up to its limit, and an item of a list that doesn't fit on its own
+# is dropped while the rest are kept.
+
+
+def _cut(limit: int) -> BeforeValidator:
+    """Cut a string to `limit` characters. Anything else is left for its type to check."""
+    return BeforeValidator(
+        lambda value: value[:limit] if isinstance(value, str) else value
+    )
+
+
+def _first(limit: int) -> BeforeValidator:
+    """Keep the first `limit` items of a list. Anything else is left for its type."""
+    return BeforeValidator(
+        lambda value: value[:limit] if isinstance(value, list) else value
+    )
+
+
+def _items(model: type[BaseModel], limit: int) -> BeforeValidator:
+    """Keep the first `limit` items of a list that are each a `model` on their own,
+    dropping the others. Anything that isn't a list is left for its type to refuse."""
+
+    def keep(value: Any) -> Any:
+        if not isinstance(value, list):
+            return value
+        kept = []
+        for item in value:
+            if len(kept) >= limit:
+                break
+            try:
+                kept.append(model.model_validate(item))
+            except ValidationError:
+                continue
+        return kept
+
+    return BeforeValidator(keep)
 
 
 class ResearchPlan(BaseModel):
     """The Recommender's plan for a round: owned games to look at, and web searches."""
 
-    backlog: list[int] = Field(default=[], max_length=10)  # appids
-    queries: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
-        default=[], max_length=4
-    )
+    model_config = ConfigDict(extra="forbid")
+
+    backlog: Annotated[list[int], _first(10)]  # appids
+    queries: Annotated[list[Annotated[str, Field(min_length=1), _cut(200)]], _first(4)]
 
 
 class FoundGame(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
+    model_config = ConfigDict(extra="forbid")
+
+    name: Annotated[str, Field(min_length=1), _cut(200)]
     url: str = ""  # the search result that names it
 
 
 class FoundGames(BaseModel):
     """The games a set of search results recommends."""
 
-    games: list[FoundGame] = Field(default=[], max_length=12)
+    model_config = ConfigDict(extra="forbid")
+
+    games: Annotated[list[FoundGame], _items(FoundGame, 12)]
 
 
 class Fit(BaseModel):
-    line: str = Field(max_length=10)  # a profile line id, "L3"
-    how: str = Field(default="", max_length=300)
+    model_config = ConfigDict(extra="forbid")
+
+    line: str  # a profile line id, "L3"; `check_proposals` drops one that isn't real
+    how: Annotated[str, _cut(300)] = ""
 
 
 class Proposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     appid: int
-    fits: list[Fit] = Field(default=[], max_length=5)
-    risk: str = Field(default="", max_length=300)
+    fits: Annotated[list[Fit], _items(Fit, 5)] = []
+    risk: Annotated[str, _cut(300)] = ""
 
 
 class Proposals(BaseModel):
-    proposals: list[Proposal] = Field(default=[], max_length=25)
+    model_config = ConfigDict(extra="forbid")
+
+    proposals: Annotated[list[Proposal], _items(Proposal, 25)]
 
 
 class Verdict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     appid: int
     accept: bool
-    reason: str = Field(default="", max_length=300)
+    reason: Annotated[str, _cut(300)] = ""
 
 
 class Verdicts(BaseModel):
-    verdicts: list[Verdict] = Field(default=[], max_length=25)
-    reject_all: str | None = Field(default=None, max_length=300)
+    model_config = ConfigDict(extra="forbid")
+
+    verdicts: Annotated[list[Verdict], _items(Verdict, 25)]
+    reject_all: Annotated[str | None, _cut(300)] = None
 
 
 # --- what the prompts are shown ---------------------------------------------------------

@@ -102,6 +102,23 @@ def test_round_adds_what_the_judge_accepts(
     assert "Solo: 1 added, 1 rejected." in messages(db, research_run)
 
 
+def test_an_over_long_reason_is_cut_and_the_verdict_kept(
+    app, db, research_world, research_run
+):  # Ruling 23
+    long_reason = "Fits L1: " + "x" * 292  # 301 characters
+    research_world["judge"] = {
+        "verdicts": [
+            {"appid": 40, "accept": True, "reason": long_reason},
+            {"appid": 60, "accept": False, "reason": "Runs are too long."},
+        ],
+        "reject_all": None,
+    }
+    assert run_lane(app, research_run) == LaneOutcome(1, 1, False)
+    accepted = db.scalar(select(Candidate).where(Candidate.appid == 40))
+    assert (accepted.verdict, accepted.added) == ("accepted", True)
+    assert accepted.reason == long_reason[:300]
+
+
 def test_the_log_of_a_round(app, db, research_world, research_run):
     run_lane(app, research_run)
     events = db.execute(
