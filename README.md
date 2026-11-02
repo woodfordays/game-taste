@@ -4,7 +4,7 @@ Game Taste turns your reviews of the games you play into a picture of what works
 
 ## What works today
 
-Setup, the Library, reviews written by lane (with drafts and a history of every version), taste profiles, the daily refresh that keeps them current, and Settings. Recommendations arrive in a later update. The tour in setup and the Settings page already describe profiles and recommendations.
+Setup, the Library, reviews written by lane (with drafts and a history of every version), taste profiles, the daily refresh that keeps them current, research, the Recommendations page, and Settings. Research finds games for each lane and the Recommendations page lists what it found, by lane and status, with the reasons. Starting a game, declining it and marking it as played come in the next update, so for now the page is for reading.
 
 Home shows your numbers: how many games you've reviewed, your play time, your average rating and your most played game. Only published reviews count, not drafts. Play time is Steam's own count for the games you own, so a game left running counts too.
 
@@ -42,6 +42,32 @@ The refresh keeps the profiles current. It runs every day at the Refresh time un
 For each profile with new reviews, the refresh asks the Everyday tasks model to update the profile, with one request for every 20 new reviews, rounded up. A reply the app can't read is asked for once more, so a batch of reviews can take two requests. Editing a review and publishing it again counts as a new review. A review tagged with a named group counts for both its lane's profile and the group's, so it is sent for each. The cost depends on the provider you chose. Each request carries the instructions, the current profile and up to 20 reviews, so give a local model a context of at least 16,000 tokens, because many local servers default to less. Each update is saved as a new version. If an update fails its checks, the profile keeps its last version, the refresh status says why, and those reviews are sent again at the next refresh.
 
 Your reviews go to the provider you picked for Everyday tasks, exactly as you wrote them, with the names of the game, the people you played with, and the group and its members. Lane profiles also send a short list of your most-played games and their hours. To keep reviews on your computer, pick a local server for Everyday tasks.
+
+## Research and recommendations
+
+Research finds games for each lane and puts the ones that pass a check on the Recommendations page. It runs only when you select "Run research" on the Research page, never by itself. It covers every lane that has a profile. A lane without one is skipped, and the log says so. Before the first round, research refreshes the profiles, Steam sync included, exactly as "Refresh now" does, so it works from your latest reviews.
+
+Two models share the work. The Recommender proposes games from a pool the app gathers: games you own and haven't played much, games the web searches turn up, and earlier picks the app lets back in. Each proposal names the lines of the profile it fits and its main risk. The Review judge then rules on each proposal, accept or reject, with a reason. Only a game the judge accepts reaches Recommendations.
+
+Each lane fills to 20 recommended games. A lane that already has 20 gets exactly 5 more, but only if you tick its box when you start the run. Three rounds run on their own. If a lane is still short after that, the run pauses, and each "Run one more round" runs exactly one more. "Stop here" ends the run. Cancel works at any point and keeps the games the judge has already accepted. A restart pauses a run in progress, and "Run one more round" carries on from there. Past runs stay listed on the Research page.
+
+### What one lane costs in one round
+
+- The Recommender: up to 3 requests. One plans the round by picking games you own and writing up to 4 web searches, one reads the search results when there are any, and one proposes games when the pool isn't empty.
+- The Review judge: 1 request, when there are proposals to rule on.
+- Tavily: up to 4 searches.
+- Co-op lanes also look up player counts. Each game whose player count wasn't checked in the last 7 days costs 1 Tavily search and 1 Everyday tasks request.
+- A reply the app can't read is asked for once more, as in the refresh.
+- Steam's store pages are read for each game's details, review summary and latest patch notes. They need no key. Facts older than 7 days are fetched again before they are used. If Steam doesn't answer the review summary, picks show no review score and everything else works.
+
+### What is sent where
+
+- The Recommender gets the lane's profile lines, what this run has rejected so far, your owned games with little play time (names and hours played), the candidates' Steam details, and the web search results.
+- The Review judge gets the profile lines and the proposals with their facts. It also gets the reviews behind the profile, the newest 40, exactly as you wrote them, and the reasons for any earlier verdicts on a game.
+- Everyday tasks gets web search results for a game's player count.
+- Tavily gets the searches the Recommender writes, and for player counts the game's name with the words "number of players co-op multiplayer".
+
+To keep your reviews on your computer, pick a local server for the Review judge as well as for Everyday tasks.
 
 ## Security note
 
