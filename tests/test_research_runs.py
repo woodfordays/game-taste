@@ -380,6 +380,30 @@ def test_the_first_segment_refreshes_then_notes_each_lane_left_out_in_lane_order
     ]
 
 
+def test_a_profile_the_refresh_failed_is_named_and_research_uses_its_last_version(
+    app, db, research_world
+):  # Ruling 24
+    publish(db, 20, Lane.SOLO, ReviewForm(rating=6, text="Too slow."), FIXED_NOW)
+    research_world["profile"] = "nope"  # the Everyday model's update can't be read
+    run = research(app, db)
+    log = messages(db, run)
+    assert log[:2] == [
+        "Refreshing profiles first.",
+        "Couldn't update the Solo profile, so research uses its last version. "
+        "The model's reply wasn't in the expected format. "
+        "Try again, or pick a different Everyday tasks model in Settings.",
+    ]
+    assert "Profiles are up to date." not in log
+    problem = db.scalar(
+        select(ResearchEvent).where(
+            ResearchEvent.run_id == run.id,
+            ResearchEvent.message.startswith("Couldn't update the Solo profile"),
+        )
+    )
+    assert (problem.step, problem.lane, problem.round) == ("problem", None, None)
+    assert "Round 1." in log and run_targets(run)[0].note is None
+
+
 def test_a_lane_whose_first_review_the_refresh_learns_is_researched(
     app, db, research_world
 ):

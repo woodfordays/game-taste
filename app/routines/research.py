@@ -46,6 +46,7 @@ from app.models import (
     Profile,
     ProfileVersion,
     ProfileVersionSource,
+    RefreshRun,
     ResearchRun,
     Review,
     ReviewVersion,
@@ -62,6 +63,7 @@ from app.routines.recommender import (
     check_proposals,
     number_lines,
 )
+from app.routines.refresh import FAILED as PROFILE_FAILED
 from app.routines.refresh import local_today, run_refresh
 from app.services.ai import StructuredReplyError
 from app.services.ai_setup import stored_ai_setup
@@ -158,6 +160,9 @@ STEP_PROBLEM = "problem"
 
 REFRESHING = "Refreshing profiles first."
 REFRESHED = "Profiles are up to date."
+PROFILE_NOT_UPDATED = (
+    "Couldn't update the {label} profile, so research uses its last version. {message}"
+)
 ROUND = "Round {round}."
 EVERY_LANE_FILLED = "Every lane is filled."
 NO_LANE_RESEARCHED = "No lane could be researched this time."
@@ -298,9 +303,10 @@ def run_research(ctx: JobContext, job_id: int) -> None:
     1. It finds the run that is running, if there is one. One already asked to cancel is
        cancelled before anything else.
     2. In the run's first segment, it refreshes the profiles as this job's own refresh,
-       then notes each lane the run leaves out, in lane order: a full lane (its note from
-       `plan_targets`) and one with no profile yet. That lane keeps its target with the
-       note, so it is never short, and never researched or reported again.
+       and logs each profile the refresh couldn't update, which research then uses as it
+       was. Then it notes each lane the run leaves out, in lane order: a full lane (its
+       note from `plan_targets`) and one with no profile yet. That lane keeps its target
+       with the note, so it is never short, and never researched or reported again.
     3. A model or the Tavily key not set up fails the run with the first blocker.
     4. Rounds, while the run has rounds left and lanes short: each short lane, in lane
        order, through `research_lane`.
@@ -400,10 +406,26 @@ def _first_segment(ctx: JobContext, run_id: int, job_id: int) -> None:
                 target.note = NO_PROFILE.format(lane=LANE_LABELS[target.lane])
         run.targets = [target.as_json() for target in targets]
         run.refresh_run_id = refresh_run_id
+        failed = [
+            detail
+            for detail in db.get(RefreshRun, refresh_run_id).details
+            if detail["outcome"] == PROFILE_FAILED
+        ]
         now = ctx.services.clock()
-        # This line's commit saves the notes and the refresh with it, so a later segment
-        # neither refreshes again nor researches a lane left out.
-        add_event(db, run_id, STEP_REFRESH, REFRESHED, now)
+        # The first line's commit saves the notes and the refresh with it, so a later
+        # segment neither refreshes again nor researches a lane left out.
+        for detail in failed:
+            add_event(
+                db,
+                run_id,
+                STEP_PROBLEM,
+                PROFILE_NOT_UPDATED.format(
+                    label=detail["label"], message=detail["message"]
+                ),
+                now,
+            )
+        if not failed:
+            add_event(db, run_id, STEP_REFRESH, REFRESHED, now)
         for target in targets:
             if target.note is not None:
                 add_event(db, run_id, STEP_SKIPPED, target.note, now, lane=target.lane)
