@@ -40,6 +40,7 @@ from app.routines.research import (
 )
 from app.services.ai import StructuredReplyError
 from app.services.game_facts import GameVersion
+from app.services.people import add_person
 from app.services.queue import lane_entries, recommended_counts, save_judged
 from app.services.reviews import Lane, ReviewForm, publish
 
@@ -605,10 +606,22 @@ def test_head_counts_seen(db, games, people):
 def test_head_counts_seen_take_groups_that_fit_the_lane(db, games, people):
     sam, alex, crew = people
     publish(db, 20, Lane.TWO, ReviewForm(text="x", people=[sam.id, alex.id]), FIXED_NOW)
-    # The version's 3 stands, though it is over the lane's 2. The crew seats 3, which
-    # isn't a Two players head count, so it adds nothing.
-    assert head_counts_seen(db, Lane.TWO) == [3]
+    # The version's 3 is cut to the lane's 2. The crew seats 3, which isn't a Two
+    # players head count, so it adds nothing.
+    assert head_counts_seen(db, Lane.TWO) == [2]
     assert head_counts_seen(db, Lane.FIVE_PLUS) == []
+
+
+def test_head_counts_seen_never_pass_the_lanes_top(db, games, people):  # Ruling 29
+    sam, alex, crew = people
+    riley = add_person(db, "Riley", FIXED_NOW)
+    everyone = [sam.id, alex.id, riley.id]  # 4 players, counting the user
+    for lane in (Lane.TWO, Lane.THREE_FOUR, Lane.FIVE_PLUS):
+        publish(db, 10, lane, ReviewForm(text="x", people=everyone), FIXED_NOW)
+    publish(db, 20, Lane.TWO, ReviewForm(text="x", people=[sam.id]), FIXED_NOW)
+    assert head_counts_seen(db, Lane.TWO) == [2]
+    assert head_counts_seen(db, Lane.THREE_FOUR) == [3, 4]  # the crew seats 3
+    assert head_counts_seen(db, Lane.FIVE_PLUS) == [5]  # raised to the lane's lowest
 
 
 def test_normalize_name():

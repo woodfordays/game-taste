@@ -232,8 +232,9 @@ def head_counts_seen(db: Session, lane: Lane) -> list[int]:
     each once, and none for Solo.
 
     Each published version in the lane counts 1 plus the people tagged on it, raised to
-    the lane's lowest head count, since people who weren't tagged may have played. Each
-    named group whose size (1 plus its members) the lane seats counts too.
+    the lane's lowest head count, since people who weren't tagged may have played, and
+    cut to its highest, when it has one, since a lane never asks for more players than it
+    seats. Each named group whose size (1 plus its members) the lane seats counts too.
     """
     lane = Lane(lane)
     if lane is Lane.SOLO:
@@ -249,7 +250,10 @@ def head_counts_seen(db: Session, lane: Lane) -> list[int]:
         .where(Review.lane == lane.value)
         .group_by(ReviewVersion.id)
     )
-    seen = {max(1 + people, low) for people in tagged}
+    seen = {
+        max(low, 1 + people) if high is None else min(high, max(low, 1 + people))
+        for people in tagged
+    }
     members = db.scalars(
         select(func.count(GroupMember.person_id))
         .select_from(NamedGroup)
