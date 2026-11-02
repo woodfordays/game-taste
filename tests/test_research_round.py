@@ -24,6 +24,7 @@ from app.jobs import job_context
 from app.models import (
     AiCall,
     Candidate,
+    Game,
     JobAssignment,
     ResearchEvent,
     ResearchRun,
@@ -245,6 +246,33 @@ def test_rejected_games_are_not_offered_again_in_the_run(
     second_plan = prompts(fake_ai, "research_plan")[-1]
     assert "Runs are too long." in second_plan
     assert "No candidates for Solo this round." in messages(db, research_run)
+
+
+def test_an_owned_game_played_a_lot_is_not_proposed(
+    app, db, research_world, research_run, fake_ai
+):  # Ruling 26
+    cozy = db.get(Game, 40)
+    cozy.owned, cozy.playtime_minutes = True, 6000  # 100 hours, not reviewed in Solo
+    db.commit()
+    run_lane(app, research_run)  # the web search finds Cozy Crawl
+    [propose_prompt] = prompts(fake_ai, "research_propose")
+    assert 'appid="40"' not in propose_prompt and 'appid="60"' in propose_prompt
+    assert db.scalar(select(Candidate).where(Candidate.appid == 40)) is None
+
+
+def test_an_owned_game_played_a_lot_does_not_come_back_from_the_history(
+    app, db, research_world, research_run, solo_version, fake_ai
+):  # Ruling 26
+    # Accepted earlier while the lane had no room, so it would come back.
+    earlier_candidate(db, solo_version, 40, "accepted", "Fits L1.", room=0)
+    cozy = db.get(Game, 40)
+    cozy.owned, cozy.playtime_minutes = True, 120
+    db.commit()
+    research_world["plan"]["queries"] = []
+    run_lane(app, research_run)
+    assert not any("earlier candidate" in m for m in messages(db, research_run))
+    [propose_prompt] = prompts(fake_ai, "research_propose")
+    assert 'appid="40"' not in propose_prompt
 
 
 # --- earlier candidates come back only through the history -----------------------------

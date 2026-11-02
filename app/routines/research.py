@@ -24,8 +24,9 @@ it goes:
 Earlier candidates come back only one way. A game with a candidate in the lane from another
 run enters the pool through the candidate history, when `may_return` allows it, or not at
 all: the backlog and the web skip it, so a game the judge rejected can't walk back in through
-a search with nothing changed. The run is checked for a cancel before every step and before
-saving, and a cancel saves nothing of the lane's round.
+a search with nothing changed. An owned game played for `BACKLOG_MAX_MINUTES` or more enters
+no pool at all, since the user already knows it. The run is checked for a cancel before
+every step and before saving, and a cancel saves nothing of the lane's round.
 """
 
 import re
@@ -620,11 +621,13 @@ class _LaneRound:
 
     def gather_history(self) -> None:
         """Put the earlier candidates that may come back into the pool, and work out the
-        skip set: the excluded games, this run's rejections, and every other earlier
-        candidate."""
+        skip set: the excluded games, the owned games played a lot, this run's rejections,
+        and every other earlier candidate."""
         db = self.db
         earlier = earlier_candidates(db, self.lane, self.run_id)
-        self.skip = excluded_appids(db, self.lane) | self.rejected_ids
+        self.skip = (
+            excluded_appids(db, self.lane) | self.played_a_lot() | self.rejected_ids
+        )
         scan = [c for c in earlier if c.appid not in self.skip][:HISTORY_SCAN]
         if scan:
             appids = [candidate.appid for candidate in scan]
@@ -652,6 +655,18 @@ class _LaneRound:
             self.event(STEP_HISTORY, HISTORY_BACK.format(m=len(kept), n=len(scan)))
             self.note_stale(refreshed, [self.pool[appid] for appid in kept_ids])
         self.skip |= {candidate.appid for candidate in earlier} - set(self.pool)
+
+    def played_a_lot(self) -> set[int]:
+        """The owned games played for `BACKLOG_MAX_MINUTES` or more. No pool takes them,
+        reviewed in the lane or not: the user already knows them, and the profile learns
+        about them from reviews, not from picks."""
+        return set(
+            self.db.scalars(
+                select(Game.appid).where(
+                    Game.owned.is_(True), Game.playtime_minutes >= BACKLOG_MAX_MINUTES
+                )
+            )
+        )
 
     def history_of(self, appids: list[int]) -> dict[int, list[dict]]:
         """Each game's earlier verdicts in the lane, from the other runs, newest first."""
