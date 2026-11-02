@@ -38,7 +38,7 @@
     </ul>
   </div>
   <div class="research-status__actions">
-    <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"
+    <button type="button" id="research-cancel" class="em-btn em-btn--secondary em-btn--md text-label"
       hx-post="/research/{{ run.id }}/cancel" hx-target="#research-status" hx-swap="outerHTML" hx-disabled-elt="this"{% if run.cancel_requested %} disabled aria-disabled="true"{% endif %}>
       <span class="em-btn__label">{{ "Cancelling" if run.cancel_requested else "Cancel research" }}</span>
     </button>
@@ -55,15 +55,15 @@
     {%- endif %}
   </div>
   <div class="research-status__actions">
-    <button type="button" class="em-btn em-btn--primary em-btn--md text-label"
+    <button type="button" id="research-continue" class="em-btn em-btn--primary em-btn--md text-label"
       hx-post="/research/{{ run.id }}/continue" hx-target="#research-status" hx-swap="outerHTML" hx-disabled-elt="this">
       <span class="em-btn__label">Run one more round</span>
     </button>
-    <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"
+    <button type="button" id="research-stop" class="em-btn em-btn--secondary em-btn--md text-label"
       hx-post="/research/{{ run.id }}/stop" hx-target="#research-status" hx-swap="outerHTML" hx-disabled-elt="this">
       <span class="em-btn__label">Stop here</span>
     </button>
-    <button type="button" class="em-btn em-btn--ghost em-btn--md text-label"
+    <button type="button" id="research-cancel" class="em-btn em-btn--ghost em-btn--md text-label"
       hx-post="/research/{{ run.id }}/cancel" hx-target="#research-status" hx-swap="outerHTML" hx-disabled-elt="this">
       <span class="em-btn__label">Cancel research</span>
     </button>
@@ -78,7 +78,7 @@
   </div>
   {%- endif %}
   <div class="research-status__actions">
-    <button type="button" class="em-btn em-btn--primary em-btn--md text-label"
+    <button type="button" id="research-run" class="em-btn em-btn--primary em-btn--md text-label"
       hx-get="/research/start" hx-target="#dialog" hx-swap="innerHTML" hx-disabled-elt="this">
       <span class="em-btn__label">Run research</span>
     </button>

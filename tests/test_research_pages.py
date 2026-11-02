@@ -250,7 +250,10 @@ def test_the_page_with_no_runs_offers_to_run_research(onboarded_client, db):
     assert "Run research" in text and "Last research" not in text
     assert "research-started from:body" in text
     assert "every 2s" not in text
-    assert "Past runs" in text and "No research runs yet." in text
+    assert (
+        "Past runs" in text
+        and "No finished runs yet. Runs appear here once they end." in text
+    )
     assert text.index('id="research-status"') < text.index("Past runs")
 
 
@@ -415,12 +418,40 @@ def test_paused_status_has_one_primary_button_and_a_ghost_cancel(
     assert re.search(r"em-btn--ghost[^>]*[^>]*>\s*<span[^>]*>Cancel research", text)
 
 
+def button_ids(text):
+    """The ids of the buttons in a status partial, in page order."""
+    return re.findall(r'<button[^>]*\sid="([^"]+)"', text)
+
+
+def test_status_buttons_have_ids_that_follow_focus_across_swaps(
+    onboarded_client, app, db, research_world, research_run
+):
+    # htmx puts focus back after a swap only on an element with an id, and the status is
+    # swapped whole at each new log line and each choice. The same action keeps the same id
+    # in every state it appears in.
+    running = onboarded_client.get("/research/status").text
+    assert button_ids(running) == ["research-cancel"]
+    db.execute(update(ResearchRun).values(status="paused"))
+    db.commit()
+    paused = onboarded_client.get("/research/status").text
+    assert button_ids(paused) == [
+        "research-continue",
+        "research-stop",
+        "research-cancel",
+    ]
+    db.execute(update(ResearchRun).values(status="finished"))
+    db.commit()
+    assert button_ids(onboarded_client.get("/research/status").text) == ["research-run"]
+
+
 def test_paused_status_has_no_past_run_row_for_the_active_run(
     onboarded_client, app, db, research_world
 ):
     paused_run(onboarded_client, app, db, research_world)
     text = page_text(onboarded_client)
-    assert "No research runs yet." in past_runs_part(text)
+    assert "No finished runs yet. Runs appear here once they end." in past_runs_part(
+        text
+    )
     assert "Paused" not in past_runs_part(text)
 
 
