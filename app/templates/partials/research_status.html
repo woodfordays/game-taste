@@ -1,0 +1,87 @@
+{#- The research status: the whole content of `#research-status` on the Research page, and the answer to GET /research/status and to the
+    continue, stop and cancel clicks, which swap it as outerHTML. The root keeps its id in every state so a swap always finds its target.
+    Context: `status` (a ResearchStatus: the `run` to show, whether it is `active`, its last `events`, the lanes still `short`, its `summary`,
+    its `key` and the `current_round`) and `result_labels` (the word for each run status).
+
+    Nothing active: the Run research button, which opens the start dialog in #dialog, and how the last run went. The root listens for the
+    `research-started` event (sent when the dialog starts a run) and loads the status again, saying it was waiting on a run (`was=running`) so
+    that a run which is already over by then still sends `research-finished`.
+
+    Running: a moving progress bar that says what the newest log line says, the log, and Cancel research. The root polls every two seconds,
+    saying which state it showed (`shown`) so that a poll with nothing new gets 204 and the log is left alone, and which state it was in
+    (`was`) so the poll that finds the run over can send `research-finished`. A cancel already asked for shows as a disabled "Cancelling".
+
+    Paused: where it stopped, the lanes still short, and the three choices, with one more round the only primary button. A paused run needs
+    nothing from the server until one is chosen, so it does not poll.
+
+    Event text is escaped like any text; nothing here marks it as safe. -#}
+{% from "partials/progress.html" import progress_bar %}
+{#- A log line: the round, the lane and the message, leaving out the parts the event does not have. -#}
+{% macro log_line(event) -%}
+{%- if event.round is not none %}Round {{ event.round }} · {% endif -%}
+{%- if event.lane %}{{ event.lane | lane_label }} · {% endif -%}
+{{ event.message }}
+{%- endmacro %}
+{%- set run = status.run %}
+{%- set running = status.active and run.status == "running" %}
+{%- set paused = status.active and run.status == "paused" %}
+<div id="research-status" class="research-status"
+  {%- if running %} hx-get="/research/status?was=running&amp;shown={{ status.key | urlencode }}" hx-trigger="every 2s" hx-swap="outerHTML"
+  {%- elif not status.active %} hx-get="/research/status?was=running" hx-trigger="research-started from:body" hx-swap="outerHTML"{% endif %}>
+  {%- if running %}
+  <div class="research-status__main">
+    {{ progress_bar("research-progress", status.events[-1].message if status.events else "Research queued.", value_text="Round %d" | format(status.current_round)) }}
+    <ul class="research-log text-body" aria-label="Research log">
+      {%- for event in status.events %}
+      <li>{{ log_line(event) }}</li>
+      {%- endfor %}
+    </ul>
+  </div>
+  <div class="research-status__actions">
+    <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"
+      hx-post="/research/{{ run.id }}/cancel" hx-target="#research-status" hx-swap="outerHTML" hx-disabled-elt="this"{% if run.cancel_requested %} disabled aria-disabled="true"{% endif %}>
+      <span class="em-btn__label">{{ "Cancelling" if run.cancel_requested else "Cancel research" }}</span>
+    </button>
+  </div>
+  {%- elif paused %}
+  <div class="research-status__main">
+    <p class="research-status__text text-body" role="status">Research paused after round {{ run.rounds_done }}.</p>
+    {%- if status.short %}
+    <ul class="research-short">
+      {%- for lane, count, target in status.short %}
+      <li class="text-body">{{ lane | lane_label }}: {{ count }} of {{ target }}.</li>
+      {%- endfor %}
+    </ul>
+    {%- endif %}
+  </div>
+  <div class="research-status__actions">
+    <button type="button" class="em-btn em-btn--primary em-btn--md text-label"
+      hx-post="/research/{{ run.id }}/continue" hx-target="#research-status" hx-swap="outerHTML" hx-disabled-elt="this">
+      <span class="em-btn__label">Run one more round</span>
+    </button>
+    <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"
+      hx-post="/research/{{ run.id }}/stop" hx-target="#research-status" hx-swap="outerHTML" hx-disabled-elt="this">
+      <span class="em-btn__label">Stop here</span>
+    </button>
+    <button type="button" class="em-btn em-btn--ghost em-btn--md text-label"
+      hx-post="/research/{{ run.id }}/cancel" hx-target="#research-status" hx-swap="outerHTML" hx-disabled-elt="this">
+      <span class="em-btn__label">Cancel research</span>
+    </button>
+  </div>
+  {%- else %}
+  {%- if status.summary %}
+  <div class="research-status__main">
+    <p class="research-status__text text-body" role="status">Last research {{ (run.finished_at or run.created_at) | when }}: {{ result_labels.get(run.status, run.status) }}. {{ status.summary.accepted }} accepted, {{ status.summary.rejected }} rejected.</p>
+    {%- if run.status == "failed" and run.error %}
+    <p class="research-status__text text-caption">{{ run.error }}</p>
+    {%- endif %}
+  </div>
+  {%- endif %}
+  <div class="research-status__actions">
+    <button type="button" class="em-btn em-btn--primary em-btn--md text-label"
+      hx-get="/research/start" hx-target="#dialog" hx-swap="innerHTML" hx-disabled-elt="this">
+      <span class="em-btn__label">Run research</span>
+    </button>
+  </div>
+  {%- endif %}
+</div>

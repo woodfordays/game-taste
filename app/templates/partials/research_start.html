@@ -1,0 +1,92 @@
+{#- The dialog that starts a run. Swapped into #dialog and opened as a modal by the script on <dialog>, like the review dialog. The `close`
+    event empties #dialog, which is what closes it for good. Cancel, the X and a click on the scrim close it at once: it holds nothing to lose.
+
+    Context: `rows` (a LaneRow for each lane: its `label`, its recommended `count` and its `state`, which is "no_profile", "full" or
+    "fills"), `blockers` (what has to be set up before research can run, as lines to show), `error` (why a start was refused, or none),
+    `ticked` (the lanes whose box is ticked), `still` (the dialog is already on screen, so it does not rise again), and `target` and `top_up`
+    (the 20 and the 5).
+
+    A lane with no profile version can't be researched yet, so it says what to do. A lane at the target gets a box to add `top_up` more, which
+    is posted as `add_five` with the lane's value; any other lane fills to the target and has nothing to choose. While anything blocks the
+    run, Start research is disabled. A start that was refused comes back as this dialog with the reason above the lanes, and the boxes as they
+    were ticked. The request is made by the button inside the form, as in the review dialog, and `hx-sync` lets only one go at a time. -#}
+{%- set unlisted = blockers | reject("equalto", error) | list %}
+<dialog class="em-dialog{% if still %} is-still{% endif %}" aria-labelledby="research-start-title" aria-describedby="research-start-desc"
+  hx-on::load="if (event.target === this) this.showModal()"
+  hx-on:close="document.getElementById('dialog').replaceChildren()"
+  hx-on:click="if (event.target === this) this.close()">
+  <div class="em-dialog__panel em-dialog__panel--md">
+    <header class="em-dialog__header">
+      <div class="em-dialog__titles">
+        <h2 id="research-start-title" class="em-dialog__title text-title">Run research</h2>
+        <p id="research-start-desc" class="em-dialog__desc text-body">Research looks for games that fit each lane's profile. It pauses after three rounds if a lane is still short.</p>
+      </div>
+      <button type="button" aria-label="Close" class="em-btn em-btn--ghost em-btn--sm em-btn--icon em-dialog__close" hx-on:click="this.closest('dialog').close()">
+        <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+      </button>
+    </header>
+
+    <form id="research-form" class="research-form" hx-target="#dialog" hx-swap="innerHTML settle:0ms">
+      <div class="em-dialog__body research-body">
+        {%- if error %}
+        <div class="em-alert em-alert--danger" role="alert">
+          <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.3" r="0.55"/></svg>
+          <div class="em-alert__content">
+            <p class="em-alert__title text-label">{{ error }}</p>
+          </div>
+        </div>
+        {%- endif %}
+        {#- The refusal above already says the first of these, when that is what it was. -#}
+        {%- if unlisted %}
+        <div class="em-alert em-alert--warning" role="alert">
+          <svg class="em-icon em-alert__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.3 4.6a2 2 0 0 1 3.4 0l7 12a2 2 0 0 1-1.7 3H5a2 2 0 0 1-1.7-3z"/><path d="M12 9.5v4"/><circle cx="12" cy="16.6" r="0.55"/></svg>
+          <div class="em-alert__content">
+            <p class="em-alert__title text-label">Research can't start yet.</p>
+            <div class="em-alert__body text-body">
+              <ul class="research-blockers">
+                {%- for blocker in unlisted %}
+                <li>{{ blocker }}</li>
+                {%- endfor %}
+              </ul>
+            </div>
+          </div>
+        </div>
+        {%- endif %}
+
+        <ul class="research-lanes">
+          {%- for row in rows %}
+          <li class="research-lane">
+            <div class="research-lane__head">
+              <span class="text-label">{{ row.label }}</span>
+              <span class="research-lane__count text-caption">{{ row.count }} recommended</span>
+            </div>
+            {%- if row.state == "no_profile" %}
+            <p class="research-lane__note text-caption">No profile yet. Publish a review played at this head count first.</p>
+            {%- elif row.state == "full" %}
+            <div class="em-check">
+              <input id="research-add-{{ row.lane.value }}" type="checkbox" class="em-check__box" name="add_five" value="{{ row.lane.value }}"{% if row.lane in ticked %} checked{% endif %}>
+              <span class="em-check__text">
+                <label for="research-add-{{ row.lane.value }}" class="em-check__label text-body">Add {{ top_up }} more to {{ row.label }}</label>
+              </span>
+            </div>
+            {%- else %}
+            <p class="research-lane__note text-caption">Fills to {{ target }}.</p>
+            {%- endif %}
+          </li>
+          {%- endfor %}
+        </ul>
+      </div>
+
+      <footer class="em-dialog__footer">
+        <button type="button" class="em-btn em-btn--secondary em-btn--md text-label"{% if blockers %} autofocus{% endif %} hx-on:click="this.closest('dialog').close()">
+          <span class="em-btn__label">Cancel</span>
+        </button>
+        <button type="submit" class="em-btn em-btn--primary em-btn--md text-label"
+          hx-post="/research" hx-disabled-elt="this" hx-sync="closest form:drop"
+          {%- if blockers %} disabled aria-disabled="true"{% else %} autofocus{% endif %}>
+          <span class="em-btn__label">Start research</span>
+        </button>
+      </footer>
+    </form>
+  </div>
+</dialog>

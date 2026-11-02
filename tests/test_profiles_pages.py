@@ -340,10 +340,18 @@ def test_profile_text_is_escaped(onboarded_client, db, built_solo_profile_with_h
 # --- the side nav and the list ------------------------------------------------
 
 
-def test_nav_puts_profiles_between_reviews_and_settings(onboarded_client):
+def test_nav_puts_profiles_after_reviews(onboarded_client):
     text = onboarded_client.get("/").text
     links = re.findall(r'<a href="(/[a-z]*)" class="em-sidenav__item', text)
-    assert links == ["/", "/library", "/reviews", "/profiles", "/settings"]
+    assert links == [
+        "/",
+        "/library",
+        "/reviews",
+        "/profiles",
+        "/recommendations",
+        "/research",
+        "/settings",
+    ]
 
 
 def test_nav_marks_profiles_as_current(onboarded_client):

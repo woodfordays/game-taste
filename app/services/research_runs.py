@@ -4,7 +4,8 @@ A run has a target for each lane (`LaneTarget`), a log of what it did (`Research
 user's choices (`ResearchChoice`, never edited). Only one run is active at a time, which is
 one that is running or paused. The work itself is done by the research job
 (`app.routines.research.run_research`); this module keeps the records and the plan, and
-makes the user's choices: start, one more round, stop and cancel.
+makes the user's choices: start, one more round, stop and cancel. `research_status` is what
+the Research page shows of a run, and `past_runs` its list of earlier ones.
 
 A run goes through `AUTO_ROUNDS` rounds on its own and then pauses while lanes are still
 short. From a pause, each `continue_research` allows exactly one more round. Every change of
@@ -438,6 +439,11 @@ def past_runs(db: Session, limit: int = 20) -> list[RunSummary]:
             .limit(limit)
         )
     )
+    return summarize_runs(db, runs)
+
+
+def summarize_runs(db: Session, runs: list[ResearchRun]) -> list[RunSummary]:
+    """Each run with how its candidates were judged, in the order given: one query."""
     if not runs:
         return []
     counts = {
@@ -454,3 +460,71 @@ def past_runs(db: Session, limit: int = 20) -> list[RunSummary]:
         )
     }
     return [RunSummary(run, *counts.get(run.id, (0, 0, 0))) for run in runs]
+
+
+# The log lines the Research page shows.
+EVENTS_SHOWN = 50
+
+
+@dataclass
+class ResearchStatus:
+    """What the Research page shows: `run` is the active run, else the newest, else None.
+    `active` says which. `events` are the run's last `EVENTS_SHOWN` log lines, oldest first.
+    `short` is (lane, recommended count, target) for each lane the run still has to fill
+    (see `lanes_short`), and `summary` how the run's candidates were judged."""
+
+    run: ResearchRun | None
+    active: bool
+    events: list[ResearchEvent]
+    short: list[tuple[Lane, int, int]]
+    summary: RunSummary | None
+
+    @property
+    def key(self) -> str:
+        """What the page would show of the run, as one string: the run, its newest log line,
+        its status and whether it was asked to cancel. A poll that would show what the page
+        already does answers with no content, so the log isn't redrawn every two seconds.
+        Empty when there is no run."""
+        if self.run is None:
+            return ""
+        newest = self.events[-1].id if self.events else 0
+        return f"{self.run.id}:{newest}:{self.run.status}:{self.run.cancel_requested}"
+
+    @property
+    def current_round(self) -> int | None:
+        """The round a running run is on: the one after those done, and never past the
+        rounds it is allowed (a run that has done them all is finishing the last)."""
+        if self.run is None:
+            return None
+        return min(self.run.rounds_done + 1, self.run.rounds_allowed)
+
+
+def research_status(db: Session) -> ResearchStatus:
+    """The run to show (see `ResearchStatus`), with its log and the lanes it is short of."""
+    run = active_run(db)
+    active = run is not None
+    if run is None:
+        run = db.scalar(
+            select(ResearchRun)
+            .order_by(ResearchRun.created_at.desc(), ResearchRun.id.desc())
+            .limit(1)
+        )
+    if run is None:
+        return ResearchStatus(None, False, [], [], None)
+    newest = db.scalars(
+        select(ResearchEvent)
+        .where(ResearchEvent.run_id == run.id)
+        .order_by(ResearchEvent.id.desc())
+        .limit(EVENTS_SHOWN)
+    )
+    events = list(reversed(list(newest)))
+    short = lanes_short(db, run)
+    targets = {target.lane: target.target for target in run_targets(run)}
+    counts = recommended_counts(db) if short else {}
+    return ResearchStatus(
+        run=run,
+        active=active,
+        events=events,
+        short=[(lane, counts[lane], targets[lane]) for lane in short],
+        summary=summarize_runs(db, [run])[0],
+    )

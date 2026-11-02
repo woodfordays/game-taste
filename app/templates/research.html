@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{#- The Research page: the status of the run (partials/research_status.html), then the past runs. Context: `status` and `result_labels` for
+    the status, and `past` (a RunSummary for each run that is not active, newest first: the run and how many games the judge accepted and
+    rejected in it). The run that is active is in the status, so it is not in the table.
+
+    The table loads itself again when a run ends (the `research-finished` event from the status): it asks for this page and takes its own
+    block out of the answer, so the status above it is left alone. -#}
+{% block title %}Research - Game Taste{% endblock %}
+{% block content %}
+<h1 class="text-headline research-title">Research</h1>
+
+{% include "partials/research_status.html" %}
+
+<section id="past-runs" class="research-past" aria-labelledby="past-runs-title"
+  hx-get="/research" hx-trigger="research-finished from:body" hx-select="#past-runs" hx-swap="outerHTML">
+  <h2 id="past-runs-title" class="text-title research-past__title">Past runs</h2>
+  <div class="em-table-wrap">
+    <table class="em-table em-table--comfortable">
+      <caption class="em-sr-only">Past research runs, newest first</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="text-label is-start">Started</th>
+          <th scope="col" class="text-label is-start">Result</th>
+          <th scope="col" class="text-label is-end">Rounds</th>
+          <th scope="col" class="text-label is-end">Accepted</th>
+          <th scope="col" class="text-label is-end">Rejected</th>
+        </tr>
+      </thead>
+      <tbody>
+        {%- for item in past %}
+        <tr>
+          <td class="text-body is-start research-nowrap">{{ item.run.created_at | when }}</td>
+          <td class="text-body is-start research-nowrap">{{ result_labels.get(item.run.status, item.run.status) }}</td>
+          <td class="text-body is-end is-numeric">{{ item.run.rounds_done }}</td>
+          <td class="text-body is-end is-numeric">{{ item.accepted }}</td>
+          <td class="text-body is-end is-numeric">{{ item.rejected }}</td>
+        </tr>
+        {%- else %}
+        <tr class="em-table__empty">
+          <td colspan="5" class="text-body">No research runs yet. They appear here after you run research.</td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

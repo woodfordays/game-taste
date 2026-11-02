@@ -1351,3 +1351,125 @@
   border-bottom: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
+
+/* The Research page: the status of the run, then the past runs. */
+.research-title {
+  margin: 0 0 var(--space-6);
+}
+
+.research-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+
+.research-status__main {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.research-status__text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.research-status__text.text-caption {
+  color: var(--ink-muted);
+}
+
+.research-status__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* The log reads from the oldest line down to the newest. It takes the room it needs: the
+   status is swapped whole at each new line, which would put a scrolling box back at its top. */
+.research-log,
+.research-short {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.research-past__title {
+  margin: 0 0 var(--space-4);
+}
+
+.em-table td.research-nowrap {
+  white-space: nowrap;
+}
+
+/* The start dialog. Like the review dialog, the form wraps the body and the footer. */
+.research-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+}
+
+.research-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.research-body > * {
+  flex: none;
+}
+
+.research-form .em-dialog__footer {
+  flex: none;
+}
+
+.research-blockers {
+  margin: 0;
+  padding-left: var(--space-5);
+  overflow-wrap: anywhere;
+}
+
+.research-lanes {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Lanes are separated by hairlines rather than boxed. */
+.research-lane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.research-lane:last-child {
+  border-bottom: 0;
+}
+
+.research-lane__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+
+.research-lane__count,
+.research-lane__note {
+  margin: 0;
+  color: var(--ink-muted);
+}
