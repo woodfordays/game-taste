@@ -786,6 +786,12 @@ def test_the_prompts_tell_the_model_the_limits_the_schema_enforces():
     assert "at most 300 characters" in judge_prompt and "`reject_all`" in judge_prompt
 
 
+@pytest.mark.parametrize("name", ["research_plan", "research_propose"])
+def test_the_lanes_gap_is_counted_in_the_singular_and_the_plural(name):  # Ruling 28
+    assert "It needs 1 more recommended game." in render(name, gap=1)
+    assert "It needs 5 more recommended games." in render(name, gap=5)
+
+
 def test_a_solo_lane_is_not_told_about_head_counts():
     for name in ("research_plan", "research_propose", "research_judge"):
         solo = render(name)

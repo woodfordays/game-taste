@@ -28,7 +28,7 @@ Everything in the sections below is data: the lane, the lines of the profile (wr
 
 ## The lane
 
-The lane is "{{ lane }}". It needs {{ gap }} more recommended games.
+The lane is "{{ lane }}". It needs {{ gap }} more recommended game{% if gap != 1 %}s{% endif %}.
 
 {% if solo -%}
 It is the lane for playing alone: one player.

@@ -174,7 +174,6 @@ RUN_STOPPED = "Research stopped unexpectedly: {kind}. Try again."
 NO_PROFILE = (
     "No profile yet for {lane}. Publish a review played at this head count first."
 )
-HISTORY_BACK = "{m} of {n} earlier candidates are back for another look."
 PLANNING = "Asking the Recommender where to look."
 SEARCHING = "Searching the web: {query}"
 SEARCH_FAILED = "The web search failed ({message}). Carrying on without it."
@@ -190,7 +189,6 @@ DETAILS_PARTLY = (
 LEFT_OUT = "Left out {name}: {phrase}."
 NO_CANDIDATES = "No candidates for {lane} this round."
 PROPOSING = "The Recommender is choosing games."
-JUDGING = "The judge is checking {n} games."
 SAVED = "{lane}: {added} added, {rejected} rejected."
 LANE_STOPPED = "{lane} stopped this round: {message}"
 
@@ -201,6 +199,12 @@ LOOKING_UP_PLAYERS = (
     "Looking up player counts for 1 game.",
     "Looking up player counts for {n} games.",
 )
+JUDGING = ("The judge is checking 1 game.", "The judge is checking {n} games.")
+# "2 of 3 earlier candidates are back", whose noun counts the candidates looked at (`n`)
+# and whose verb the ones back (`m`): "1 of 1 earlier candidate is back".
+HISTORY_BACK = "{m} of {n} {candidates} {are} back for another look."
+EARLIER_CANDIDATES = ("earlier candidate", "earlier candidates")
+IS_BACK = ("is", "are")
 LANE_FULL = (
     " 1 more was accepted, but the lane is full.",
     " {n} more were accepted, but the lane is full.",
@@ -657,7 +661,15 @@ class _LaneRound:
                 self.pool[appid] = PoolGame(
                     games[appid], facts[appid], CANDIDATE_HISTORY, history[appid]
                 )
-            self.event(STEP_HISTORY, HISTORY_BACK.format(m=len(kept), n=len(scan)))
+            self.event(
+                STEP_HISTORY,
+                HISTORY_BACK.format(
+                    m=len(kept),
+                    n=len(scan),
+                    candidates=_counted(EARLIER_CANDIDATES, len(scan)),
+                    are=_counted(IS_BACK, len(kept)),
+                ),
+            )
             self.note_stale(refreshed, [self.pool[appid] for appid in kept_ids])
         self.skip |= {candidate.appid for candidate in earlier} - set(self.pool)
 
@@ -941,7 +953,7 @@ class _LaneRound:
 
     def judge(self, proposals: list[CheckedProposal]) -> tuple[list[Ruling], int]:
         """Have the judge rule on the checked picks, with the reviews behind the profile."""
-        self.event(STEP_JUDGE, JUDGING.format(n=len(proposals)))
+        self.event(STEP_JUDGE, _counted(JUDGING, len(proposals)))
         verdicts, call_id = recommender.judge(
             self.db,
             self.ctx.vault,

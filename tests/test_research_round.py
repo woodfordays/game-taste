@@ -218,6 +218,19 @@ def test_the_log_counts_more_than_one_game_in_the_plural(
     )
 
 
+def test_the_log_counts_one_game_in_the_singular(
+    app, db, research_world, research_run, solo_version
+):  # Ruling 28
+    research_world["propose"]["proposals"] = research_world["propose"]["proposals"][:1]
+    # Cozy Crawl comes back from the history, and Old Crate's rejection keeps it out.
+    earlier_candidate(db, solo_version, 40, "accepted", "Fits L1.", room=0)
+    earlier_candidate(db, solo_version, 60, "rejected", "Runs are too long.")
+    run_lane(app, research_run)
+    log = messages(db, research_run)
+    assert "The judge is checking 1 game." in log
+    assert "1 of 2 earlier candidates is back for another look." in log
+
+
 def test_invented_games_never_reach_the_judge(
     app, db, research_world, research_run, fake_ai
 ):  # Review focus 1
@@ -292,7 +305,7 @@ def test_an_earlier_rejection_stays_out_when_nothing_changed(
         )
         is None
     )
-    assert "0 of 1 earlier candidates are back for another look." in messages(
+    assert "0 of 1 earlier candidate are back for another look." in messages(
         db, research_run
     )
 
@@ -336,7 +349,7 @@ def test_an_earlier_rejection_comes_back_after_a_patch(
         for p in prompts(fake_ai, "research_propose")
         + prompts(fake_ai, "research_judge")
     )
-    assert "1 of 1 earlier candidates are back for another look." in messages(
+    assert "1 of 1 earlier candidate is back for another look." in messages(
         db, research_run
     )
 
