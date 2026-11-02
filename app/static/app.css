@@ -12,6 +12,20 @@
   height: 100vh;
 }
 
+/* The links and the theme toggle, under the product name. They are one block so the menu button can hide them together. */
+.app-nav-menu {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* The menu button is for narrow screens only (below). */
+.app-nav-toggle {
+  display: none;
+}
+
 .app-main {
   flex: 1;
   min-width: 0;
@@ -21,6 +35,54 @@
 .app-content {
   max-width: var(--content-max);
   margin: 0 auto;
+}
+
+/* A narrow screen has no room for a side nav beside the content. The nav becomes a bar across the top with the product name
+   and a menu button, and the links and the theme toggle drop down under the bar while the button is open. Ember has no
+   pattern for this, so it is the side nav's own parts laid out in a row. */
+@media (max-width: 760px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .app-shell > .em-sidenav {
+    position: static;
+    flex-flow: row wrap;
+    align-items: center;
+    gap: var(--space-2);
+    width: auto;
+    height: auto;
+    padding: var(--space-2);
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .app-shell > .em-sidenav > .em-sidenav__header {
+    flex: 1;
+  }
+
+  .app-nav-toggle {
+    display: inline-flex;
+  }
+
+  .app-nav-toggle[aria-expanded="false"] + .app-nav-menu {
+    display: none;
+  }
+
+  /* The menu icon while it is closed, a cross while it is open. */
+  .app-nav-toggle[aria-expanded="false"] .app-nav-toggle__close,
+  .app-nav-toggle[aria-expanded="true"] .app-nav-toggle__open {
+    display: none;
+  }
+
+  .app-nav-menu {
+    flex-basis: 100%;
+    padding-bottom: var(--space-2);
+  }
+
+  .app-main {
+    padding: var(--space-6) var(--space-4);
+  }
 }
 
 /* Pre-login pages (first-run password, login): no side nav, one centered column. */

@@ -1,5 +1,8 @@
 import io
+import re
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
+from pathlib import Path
 
 import pytest
 from conftest import FIXED_NOW, fake_request
@@ -101,6 +104,170 @@ def test_side_nav_marks_current_section(app, section, href):
     current = html.split('aria-current="page"')[0].rsplit("<a ", 1)[1]
     assert f'href="{href}"' in current
     assert "is-current" in current
+
+
+# --- the shell on narrow screens ------------------------------------------------
+
+VOID = {
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "source",
+    "track",
+    "wbr",
+}
+
+
+class _Elements(HTMLParser):
+    """Every element in document order, as (tag, attrs, ancestors), ancestors being the (tag, attrs) it sits in."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack: list[tuple[str, dict]] = []
+        self.found: list[tuple[str, dict, list[tuple[str, dict]]]] = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        self.found.append((tag, attrs, list(self.stack)))
+        if tag not in VOID:
+            self.stack.append((tag, attrs))
+
+    def handle_startendtag(self, tag, attrs):
+        self.found.append((tag, dict(attrs), list(self.stack)))
+
+    def handle_endtag(self, tag):
+        while self.stack and self.stack.pop()[0] != tag:
+            pass
+
+
+def elements(markup: str) -> list[tuple[str, dict, list[tuple[str, dict]]]]:
+    parser = _Elements()
+    parser.feed(markup)
+    return parser.found
+
+
+def within(ancestors: list[tuple[str, dict]], tag: str, **attrs: str) -> bool:
+    return any(
+        t == tag and all(a.get(k) == v for k, v in attrs.items()) for t, a in ancestors
+    )
+
+
+def nav_links_and_toggle(found):
+    """The side nav's links and the theme toggle, each with its ancestors."""
+    return [
+        (attrs, ancestors)
+        for tag, attrs, ancestors in found
+        if (tag == "a" and "em-sidenav__item" in attrs.get("class", "").split())
+        or attrs.get("id") == "theme-toggle"
+    ]
+
+
+def test_the_side_nav_is_the_one_main_nav_landmark(app):
+    found = elements(
+        render(fake_request(app), "base.html", nav="library").body.decode()
+    )
+    navs = [attrs for tag, attrs, _ in found if tag == "nav"]
+    assert len(navs) == 1 and navs[0]["aria-label"] == "Main"
+    assert "em-sidenav" in navs[0]["class"].split()
+    assert [tag for tag, _, _ in found].count("main") == 1
+    parts = nav_links_and_toggle(found)
+    assert len(parts) == 6  # five links and the theme toggle
+    assert all(
+        within(ancestors, "nav", **{"aria-label": "Main"}) for _, ancestors in parts
+    )
+
+
+def test_the_menu_button_controls_the_links_and_the_theme_toggle(app):
+    html = render(fake_request(app), "base.html", nav="library").body.decode()
+    found = elements(html)
+    [(button, ancestors)] = [
+        (a, anc) for _, a, anc in found if a.get("id") == "nav-toggle"
+    ]
+    assert button["type"] == "button"
+    # Closed when the page loads; the script opens it. Above the narrow width the button is hidden
+    # and the menu shows whatever this says.
+    assert button["aria-expanded"] == "false"
+    assert within(ancestors, "nav", **{"aria-label": "Main"})
+    # Never a second primary on a page.
+    assert "em-btn--ghost" in button["class"].split()
+    menu_id = button["aria-controls"]
+    [menu_ancestors] = [anc for _, a, anc in found if a.get("id") == menu_id]
+    assert within(menu_ancestors, "nav")
+    # Everything the bar hides is in the menu, so it is all one press away, the current page included.
+    for _, ancestors in nav_links_and_toggle(found):
+        assert within(ancestors, "div", id=menu_id)
+    [current] = [
+        a for a, _ in nav_links_and_toggle(found) if a.get("aria-current") == "page"
+    ]
+    assert current["href"] == "/library"
+
+
+def test_the_menu_button_is_named_by_its_word_not_its_icon(app):
+    html = render(fake_request(app), "base.html").body.decode()
+    found = re.search(r'<button[^>]*id="nav-toggle".*?</button>', html, re.S)
+    assert found, "no menu button"
+    button = found.group(0)
+    assert '<span class="em-btn__label">Menu</span>' in button
+    assert "aria-label" not in button
+    svgs = re.findall(r"<svg[^>]*>", button)
+    assert len(svgs) == 2  # the menu icon, and the close icon shown while it is open
+    assert all('aria-hidden="true"' in svg for svg in svgs)
+
+
+def test_the_menu_script_flips_aria_expanded_and_escape_closes_it(app):
+    html = render(fake_request(app), "base.html").body.decode()
+    [script] = [
+        s
+        for s in re.findall(r"<script>(.*?)</script>", html, re.S)
+        if "nav-toggle" in s
+    ]
+    assert '"aria-expanded"' in script
+    assert '"Escape"' in script and "button.focus()" in script
+
+
+def test_pages_without_the_shell_have_no_menu_button(client):
+    r = client.get("/onboarding/password")
+    assert r.status_code == 200 and 'id="nav-toggle"' not in r.text
+
+
+APP_CSS = (Path(__file__).parent.parent / "app" / "static" / "app.css").read_text(
+    encoding="utf-8"
+)
+
+
+def media_block(css: str, query: str) -> str:
+    """The body of the first `@media <query> { ... }` in css."""
+    start = css.index("@media " + query + " {") + len("@media " + query + " {")
+    depth, i = 1, start
+    while depth:
+        depth += {"{": 1, "}": -1}.get(css[i], 0)
+        i += 1
+    return css[start : i - 1]
+
+
+def test_the_menu_button_only_shows_on_narrow_screens():
+    css = re.sub(r"/\*.*?\*/", "", APP_CSS, flags=re.S)
+    # The narrow block is the one that starts by turning the shell into a column.
+    shell = re.search(r"@media (\(max-width: \d+px\)) \{\s*\.app-shell \{", css)
+    assert shell, "no narrow-screen block for the shell"
+    query = shell.group(1)
+    narrow = media_block(css, query)
+    wide = css.replace("@media " + query + " {" + narrow + "}", "")
+    assert re.search(r"\.app-nav-toggle \{[^}]*display: none", wide)
+    assert re.search(r"\.app-nav-toggle \{[^}]*display: inline-flex", narrow)
+    # The menu hides only while the button says it is closed, and only on narrow screens.
+    assert re.search(
+        r'\.app-nav-toggle\[aria-expanded="false"\] \+ \.app-nav-menu \{[^}]*display: none',
+        narrow,
+    )
+    assert "aria-expanded" not in wide
 
 
 def test_render_adds_context_and_honors_status(app, db):

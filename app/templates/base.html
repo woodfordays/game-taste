@@ -16,24 +16,32 @@
       <div class="em-sidenav__header">
         <span class="text-subtitle">Game Taste</span>
       </div>
-      <div class="em-sidenav__sections">
-        <div class="em-sidenav__section">
-          <ul class="em-sidenav__list">
-            {% for key, label, href in [("home", "Home", "/"), ("library", "Library", "/library"), ("reviews", "Reviews", "/reviews"), ("profiles", "Profiles", "/profiles"), ("settings", "Settings", "/settings")] %}
-            <li>
-              <a href="{{ href }}" class="em-sidenav__item text-label{% if nav == key %} is-current{% endif %}"{% if nav == key %} aria-current="page"{% endif %}>
-                <span class="em-sidenav__label">{{ label }}</span>
-              </a>
-            </li>
-            {% endfor %}
-          </ul>
+      {#- On a narrow screen the side nav is a bar across the top, and this button shows and hides the rest of it (app.css). -#}
+      <button type="button" id="nav-toggle" class="em-btn em-btn--ghost em-btn--md text-label app-nav-toggle" aria-expanded="false" aria-controls="nav-menu">
+        <svg class="em-icon app-nav-toggle__open" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        <svg class="em-icon app-nav-toggle__close" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+        <span class="em-btn__label">Menu</span>
+      </button>
+      <div id="nav-menu" class="app-nav-menu">
+        <div class="em-sidenav__sections">
+          <div class="em-sidenav__section">
+            <ul class="em-sidenav__list">
+              {% for key, label, href in [("home", "Home", "/"), ("library", "Library", "/library"), ("reviews", "Reviews", "/reviews"), ("profiles", "Profiles", "/profiles"), ("settings", "Settings", "/settings")] %}
+              <li>
+                <a href="{{ href }}" class="em-sidenav__item text-label{% if nav == key %} is-current{% endif %}"{% if nav == key %} aria-current="page"{% endif %}>
+                  <span class="em-sidenav__label">{{ label }}</span>
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
         </div>
-      </div>
-      <div class="em-sidenav__footer">
-        {% set toggle_label = "Switch to dark theme" if theme == "light" else "Switch to light theme" %}
-        <button type="button" id="theme-toggle" class="em-btn em-btn--ghost em-btn--md em-btn--icon" aria-label="{{ toggle_label }}" title="{{ toggle_label }}">
-          <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.5 14.2A7.8 7.8 0 1 1 9.8 4.5a6.3 6.3 0 0 0 9.7 9.7z"/></svg>
-        </button>
+        <div class="em-sidenav__footer">
+          {% set toggle_label = "Switch to dark theme" if theme == "light" else "Switch to light theme" %}
+          <button type="button" id="theme-toggle" class="em-btn em-btn--ghost em-btn--md em-btn--icon" aria-label="{{ toggle_label }}" title="{{ toggle_label }}">
+            <svg class="em-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.5 14.2A7.8 7.8 0 1 1 9.8 4.5a6.3 6.3 0 0 0 9.7 9.7z"/></svg>
+          </button>
+        </div>
       </div>
     </nav>
     <main class="app-main">
@@ -60,6 +68,21 @@
         var label = next === "light" ? "Switch to dark theme" : "Switch to light theme";
         button.setAttribute("aria-label", label);
         button.setAttribute("title", label);
+      });
+    })();
+  </script>
+  <script>
+    // The menu button on a narrow screen. aria-expanded is the only state: app.css hides the menu while it is "false".
+    (function () {
+      var button = document.getElementById("nav-toggle");
+      if (!button) return; // Pages that replace the shell block have no nav.
+      function open(yes) { button.setAttribute("aria-expanded", yes ? "true" : "false"); }
+      button.addEventListener("click", function () { open(button.getAttribute("aria-expanded") !== "true"); });
+      // Escape anywhere in the nav closes the menu and puts focus back on the button, so it isn't lost on a hidden link.
+      button.parentElement.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape" || button.getAttribute("aria-expanded") !== "true") return;
+        open(false);
+        button.focus();
       });
     })();
   </script>
