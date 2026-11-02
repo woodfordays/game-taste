@@ -47,6 +47,8 @@ EMPTY_MESSAGES = {
 }
 
 COMING_SOON = "Coming soon"
+EARLY_ACCESS = "Early Access"
+RELEASED = "Released"
 
 
 @dataclass
@@ -106,6 +108,7 @@ def _fact_rows(view: EntryView, lane: Lane) -> list[FactRow]:
       A game the user owns has no price to pay, so it has no row.
     - Reviews: Steam's score and how many reviews it rests on.
     - Release: the release date as the store gives it.
+    - Status: "Early Access", "Coming soon" or "Released", from the store entry.
     """
     facts = view.facts
     rows = []
@@ -126,6 +129,15 @@ def _fact_rows(view: EntryView, lane: Lane) -> list[FactRow]:
         rows.append(FactRow("Reviews", facts.review_text, facts.reviews.fetched_at))
     if facts.store is not None and facts.release_date:
         rows.append(FactRow("Release", facts.release_date, facts.store.fetched_at))
+    # Early Access is None when the store has no entry for the game: nothing to say.
+    if facts.store is not None and facts.early_access is not None:
+        if facts.early_access:
+            status = EARLY_ACCESS
+        elif facts.coming_soon:
+            status = COMING_SOON
+        else:
+            status = RELEASED
+        rows.append(FactRow("Status", status, facts.store.fetched_at))
     return rows
 
 

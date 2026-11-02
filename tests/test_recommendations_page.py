@@ -492,12 +492,32 @@ def test_each_fact_has_its_own_checked_date(
         in shown
     )
     assert "Release 1 Jan, 2025 checked Jan 5, 12:00 PM" in shown
-    assert shown.count("checked") == 4
+    assert "Status Released checked Jan 5, 12:00 PM" in shown
+    assert shown.count("checked") == 5
+
+
+def test_the_status_is_a_dated_fact(
+    onboarded_client, db, games, solo_version, research_run
+):  # Ruling 30
+    save_facts(db, 40, "Cozy Crawl", early_access=True, fetched_at=T1)
+    save_facts(db, 50, "Party Pile", price_cents=None, coming_soon=True)
+    save_facts(db, 60, "Old Crate")
+    put(db, research_run, solo_version, judged(40), judged(50), judged(60))
+    text = onboarded_client.get("/recommendations").text
+    assert "Status Early Access checked Jan 5, 12:00 PM" in visible(pick(text, 40))
+    assert "Status Coming soon checked just now" in visible(pick(text, 50))
+    assert "Status Released checked just now" in visible(pick(text, 60))
+    # The badge stays beside the name.
+    assert re.search(
+        r'<span class="em-badge em-badge--warning[^"]*"[^>]*>\s*Early Access\s*</span>',
+        pick(text, 40),
+    )
 
 
 def test_a_value_is_never_shown_without_its_checked_date(onboarded_client, solo_picks):
     text = onboarded_client.get("/recommendations").text
-    for appid, rows in ((40, 3), (20, 2)):  # price, reviews, release; owned: no price
+    # Price, reviews, release and status; an owned game has no price.
+    for appid, rows in ((40, 4), (20, 3)):
         shown = visible(pick(text, appid))
         assert shown.count("checked") == rows
 
@@ -528,6 +548,7 @@ def test_a_store_entry_that_is_not_available_shows_no_store_facts(
     assert (
         "Price" not in shown and "Release" not in shown and "Early Access" not in shown
     )
+    assert "Status" not in shown
     assert "Reviews Very Positive (100 reviews) checked" in shown
 
 
