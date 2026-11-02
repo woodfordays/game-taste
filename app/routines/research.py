@@ -69,6 +69,7 @@ from app.routines.refresh import local_today, run_refresh
 from app.services.ai import StructuredReplyError
 from app.services.ai_setup import stored_ai_setup
 from app.services.game_facts import (
+    FACTS_MAX_AGE,
     MAX_STEAM_FAILURES_IN_A_ROW,
     FactsRefresh,
     current_facts,
@@ -181,6 +182,10 @@ NOT_ON_STEAM = "Couldn't find these on Steam: {names}."
 DETAILS_MISSING = "Steam's details are missing for: {names}."
 DETAILS_STALE = (
     "Couldn't refresh Steam's details for: {names}. Using the last ones saved."
+)
+DETAILS_PARTLY = (
+    "Some of Steam's details didn't load for: {names}. "
+    "Their picks may show no review score or patch date."
 )
 LEFT_OUT = "Left out {name}: {phrase}."
 NO_CANDIDATES = "No candidates for {lane} this round."
@@ -849,15 +854,23 @@ class _LaneRound:
             self.event(STEP_PROBLEM, DETAILS_MISSING.format(names=names))
 
     def note_stale(self, refreshed: FactsRefresh, items: Iterable[PoolGame]) -> None:
-        """Log, in one line, the games among `items` that Steam failed to refresh but whose
-        last saved facts keep them in the pool. A game that drops out has its own line."""
-        stale = [
-            item.game.name
-            for item in items
-            if item.game.appid in refreshed.problems and item.facts.is_game
-        ]
+        """Log the games among `items` that Steam failed to refresh but whose last saved
+        facts keep them in the pool: in one line those whose store details are still old
+        or missing, and in another those whose store details are fresh but whose review
+        summary or news didn't load. A game that drops out has its own line."""
+        stale, partly = [], []
+        for item in items:
+            if item.game.appid not in refreshed.problems or not item.facts.is_game:
+                continue
+            store = item.facts.store
+            if store is None or self.now - store.fetched_at > FACTS_MAX_AGE:
+                stale.append(item.game.name)
+            else:
+                partly.append(item.game.name)
         if stale:
             self.event(STEP_PROBLEM, DETAILS_STALE.format(names=", ".join(stale)))
+        if partly:
+            self.event(STEP_PROBLEM, DETAILS_PARTLY.format(names=", ".join(partly)))
 
     # --- 6. players -------------------------------------------------------------------
 

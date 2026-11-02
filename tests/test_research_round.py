@@ -25,6 +25,7 @@ from app.models import (
     AiCall,
     Candidate,
     Game,
+    GameFact,
     JobAssignment,
     ResearchEvent,
     ResearchRun,
@@ -407,6 +408,53 @@ def test_a_game_steam_fails_to_refresh_keeps_its_last_facts(
     }
     assert set(saved) == {40, 60}
     assert saved[60].facts["store"]["fetched_at"] == eight_days_ago.isoformat()
+
+
+PARTLY_LOADED = (
+    "Some of Steam's details didn't load for: {}. "
+    "Their picks may show no review score or patch date."
+)
+
+
+def test_fresh_store_details_with_no_review_summary_are_not_called_stale(
+    app, db, research_world, research_run, fake_steam
+):  # Ruling 27
+    # Steam's review summaries don't load, but the store details just did.
+    fake_steam.review_summaries[40] = {}
+    fake_steam.review_summaries[60] = {}
+    run_lane(app, research_run)
+    log = messages(db, research_run)
+    assert PARTLY_LOADED.format("Old Crate, Cozy Crawl") in log
+    assert not any(m.startswith("Couldn't refresh Steam's details") for m in log)
+    assert {c.appid for c in db.scalars(select(Candidate))} == {40, 60}
+
+
+def test_only_games_on_old_store_details_are_called_stale(
+    app, db, research_world, research_run, solo_version, fake_steam
+):  # Ruling 27
+    eight_days_ago = FIXED_NOW - timedelta(days=8)
+    save_facts(db, 40, "Cozy Crawl", fetched_at=eight_days_ago)
+    save_facts(db, 60, "Old Crate", fetched_at=eight_days_ago)
+    # Old Crate's store details are fresh; its review summary and news are not.
+    store = db.scalar(
+        select(GameFact).where(GameFact.appid == 60, GameFact.kind == "store")
+    )
+    db.add(
+        GameFact(
+            appid=60, kind="store", data=store.data, source_url=None, fetched_at=T2
+        )
+    )
+    db.commit()
+    earlier_candidate(db, solo_version, 40, "accepted", "Fits L1.", room=0)
+    research_world["plan"]["queries"] = []
+    fake_steam.fail_with(500)
+    run_lane(app, research_run)
+    log = messages(db, research_run)
+    stale = "Couldn't refresh Steam's details for: {}. Using the last ones saved."
+    assert stale.format("Cozy Crawl") in log  # the history scan
+    assert PARTLY_LOADED.format("Old Crate") in log  # the facts step
+    assert stale.format("Old Crate") not in log
+    assert PARTLY_LOADED.format("Cozy Crawl") not in log
 
 
 def test_names_without_an_exact_store_match_are_reported(
