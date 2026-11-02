@@ -11,8 +11,10 @@
     saying which state it showed (`shown`) so that a poll with nothing new gets 204 and the log is left alone, and which state it was in
     (`was`) so the poll that finds the run over can send `research-finished`. A cancel already asked for shows as a disabled "Cancelling".
 
-    Paused: where it stopped, the lanes still short, and the three choices, with one more round the only primary button. A paused run needs
-    nothing from the server until one is chosen, so it does not poll.
+    Paused: where it stopped, the lanes still short, the run's log under them, open, and the three choices, with one more round the only
+    primary button. A paused run needs nothing from the server until one is chosen, so it does not poll.
+
+    Nothing active, after a run: the last run's log as well, folded away under "Run log".
 
     Event text is escaped like any text; nothing here marks it as safe. -#}
 {% from "partials/progress.html" import progress_bar %}
@@ -21,6 +23,23 @@
 {%- if event.round is not none %}Round {{ event.round }} · {% endif -%}
 {%- if event.lane %}{{ event.lane | lane_label }} · {% endif -%}
 {{ event.message }}
+{%- endmacro %}
+{#- The log, oldest line first: shown as it is while the run runs, and in a `<details>` once it has stopped. -#}
+{% macro log_list(events) -%}
+<ul class="research-log text-body" aria-label="Research log">
+      {%- for event in events %}
+      <li>{{ log_line(event) }}</li>
+      {%- endfor %}
+    </ul>
+{%- endmacro %}
+{% macro folded_log(events, open) -%}
+<details class="research-details"{% if open %} open{% endif %}>
+      <summary class="em-btn em-btn--ghost em-btn--md text-label">
+        <svg class="em-icon research-details__chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 9.5l5.5 5.5 5.5-5.5"/></svg>
+        <span class="em-btn__label">Run log</span>
+      </summary>
+      {{ log_list(events) }}
+    </details>
 {%- endmacro %}
 {%- set run = status.run %}
 {%- set running = status.active and run.status == "running" %}
@@ -31,11 +50,7 @@
   {%- if running %}
   <div class="research-status__main">
     {{ progress_bar("research-progress", status.events[-1].message if status.events else "Research queued.", value_text="Round %d" | format(status.current_round)) }}
-    <ul class="research-log text-body" aria-label="Research log">
-      {%- for event in status.events %}
-      <li>{{ log_line(event) }}</li>
-      {%- endfor %}
-    </ul>
+    {{ log_list(status.events) }}
   </div>
   <div class="research-status__actions">
     <button type="button" id="research-cancel" class="em-btn em-btn--secondary em-btn--md text-label"
@@ -52,6 +67,9 @@
       <li class="text-body">{{ lane | lane_label }}: {{ count }} of {{ target }}.</li>
       {%- endfor %}
     </ul>
+    {%- endif %}
+    {%- if status.events %}
+    {{ folded_log(status.events, true) }}
     {%- endif %}
   </div>
   <div class="research-status__actions">
@@ -74,6 +92,9 @@
     <p class="research-status__text text-body" role="status">Last research {{ (run.finished_at or run.created_at) | when }}: {{ result_labels.get(run.status, run.status) }}. {{ status.summary.accepted }} accepted, {{ status.summary.rejected }} rejected.</p>
     {%- if run.status == "failed" and run.error %}
     <p class="research-status__text text-caption">{{ run.error }}</p>
+    {%- endif %}
+    {%- if status.events %}
+    {{ folded_log(status.events, false) }}
     {%- endif %}
   </div>
   {%- endif %}

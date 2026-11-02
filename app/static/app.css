@@ -1400,6 +1400,25 @@
   overflow-wrap: anywhere;
 }
 
+/* Once a run stops, its log folds away under "Run log": open while it is paused, closed
+   after it ends. */
+.research-details > summary {
+  width: fit-content;
+  list-style: none;
+}
+
+.research-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.research-details[open] > summary .research-details__chevron {
+  transform: rotate(180deg);
+}
+
+.research-details > .research-log {
+  padding-top: var(--space-3);
+}
+
 .research-past__title {
   margin: 0 0 var(--space-4);
 }

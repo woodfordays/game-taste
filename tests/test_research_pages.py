@@ -13,8 +13,10 @@ from sqlalchemy import delete, func, select, update
 from app.jobs import run_pending_jobs
 from app.models import JobAssignment, ResearchChoice, ResearchRun
 from app.services.research_runs import (
+    INTERRUPTED,
     add_event,
     cancel_research,
+    end_run,
     research_status,
     run_targets,
 )
@@ -416,6 +418,76 @@ def test_paused_status_has_one_primary_button_and_a_ghost_cancel(
     assert primary.group(1) == "Run one more round"
     assert re.search(r"em-btn--secondary[^>]*[^>]*>\s*<span[^>]*>Stop here", text)
     assert re.search(r"em-btn--ghost[^>]*[^>]*>\s*<span[^>]*>Cancel research", text)
+
+
+def run_log(text):
+    """The `<details>` that holds the run's log in a status partial: its opening tag and
+    the summary's words, and the lines of the log."""
+    match = re.search(r"(<details[^>]*>)(.*?)</details>", text, re.S)
+    assert match, "No run log"
+    summary = re.search(r"<summary[^>]*>(.*?)</summary>", match.group(2), re.S)
+    lines = re.findall(r"<li[^>]*>\s*([^<]*?)\s*</li>", match.group(2))
+    return (
+        match.group(1),
+        " ".join(re.sub(r"<[^>]*>", " ", summary.group(1)).split()),
+        lines,
+    )
+
+
+def test_a_paused_run_shows_its_log_open_under_the_lane_lines(
+    onboarded_client, db, research_world, research_run
+):  # Ruling 25
+    add_event(
+        db,
+        research_run.id,
+        "search",
+        "Searching <b>cozy</b>.",
+        FIXED_NOW,
+        round=1,
+        lane="solo",
+    )
+    assert end_run(db, research_run.id, "paused", INTERRUPTED, FIXED_NOW)
+    text = onboarded_client.get("/research/status").text
+    opening, summary, lines = run_log(text)
+    assert " open" in opening and summary == "Run log"
+    assert lines == [
+        "Round 1 · Solo · Searching &lt;b&gt;cozy&lt;/b&gt;.",
+        "Interrupted by a restart. Run one more round to carry on, or stop here.",
+    ]
+    assert "<b>cozy</b>" not in text
+    assert text.index("Solo: 0 of 20.") < text.index("<details")
+    assert text.index("<details") < text.index('id="research-continue"')
+
+
+def test_the_idle_status_keeps_the_last_runs_log_closed(
+    onboarded_client, app, db, research_world, solo_version
+):  # Ruling 25
+    fill_lane(db, Lane.SOLO, 19, solo_version)
+    onboarded_client.post("/research", data={})
+    run_pending_jobs(app)
+    text = onboarded_client.get("/research/status").text
+    opening, summary, lines = run_log(text)
+    assert " open" not in opening and summary == "Run log"
+    assert (
+        lines[0] == "Refreshing profiles first."
+        and lines[-1] == "Every lane is filled."
+    )
+    assert "Round 1 · Solo · Solo: 1 added, 1 rejected." in lines
+    assert text.index("Last research") < text.index("<details")
+    assert text.count("em-btn--primary") == 1
+
+
+def test_a_running_run_shows_its_log_unfolded(
+    onboarded_client, db, research_world, research_run
+):  # Ruling 25
+    add_event(db, research_run.id, "round", "Round 1.", FIXED_NOW, round=1)
+    running = onboarded_client.get("/research/status").text
+    assert "<details" not in running and "Round 1 · Round 1." in running
+
+
+def test_with_no_run_there_is_no_log(onboarded_client):  # Ruling 25
+    text = onboarded_client.get("/research/status").text
+    assert "<details" not in text and "Run log" not in text
 
 
 def button_ids(text):
