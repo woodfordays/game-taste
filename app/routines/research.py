@@ -319,8 +319,9 @@ def run_research(ctx: JobContext, job_id: int) -> None:
     2. In the run's first segment, it refreshes the profiles as this job's own refresh,
        and logs each profile the refresh couldn't update, which research then uses as it
        was. Then it notes each lane the run leaves out, in lane order: a full lane (its
-       note from `plan_targets`) and one with no profile yet. That lane keeps its target
-       with the note, so it is never short, and never researched or reported again.
+       note from `plan_targets`) and one with no profile yet, or only a profile with no
+       lines. That lane keeps its target with the note, so it is never short, and never
+       researched or reported again.
     3. A model or the Tavily key not set up fails the run with the first blocker.
     4. Rounds, while the run has rounds left and lanes short: each short lane, in lane
        order, through `research_lane`.
@@ -415,7 +416,7 @@ def _first_segment(ctx: JobContext, run_id: int, job_id: int) -> None:
             if (
                 target.target is not None
                 and target.note is None
-                and not _has_profile_version(db, target.lane)
+                and not _has_profile_lines(db, target.lane)
             ):
                 target.note = NO_PROFILE.format(lane=LANE_LABELS[target.lane])
         run.targets = [target.as_json() for target in targets]
@@ -456,9 +457,12 @@ def _unset_model_message(ctx: JobContext, err: StructuredReplyError) -> str:
     return blockers[0] if blockers else err.message
 
 
-def _has_profile_version(db: Session, lane: Lane) -> bool:
+def _has_profile_lines(db: Session, lane: Lane) -> bool:
+    """Whether the lane's current profile version has a line to research from. One with
+    nothing in `loved`, `dealbreakers`, `patterns` or `hunches` counts as no profile."""
     profile = find_profile(db, lane_key(lane))
-    return profile is not None and current_version(db, profile) is not None
+    version = current_version(db, profile) if profile is not None else None
+    return version is not None and bool(number_lines(version.content))
 
 
 def _end_run(ctx: JobContext, run_id: int, status: str, message: str) -> None:

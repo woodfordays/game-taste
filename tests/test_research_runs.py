@@ -404,6 +404,37 @@ def test_a_profile_the_refresh_failed_is_named_and_research_uses_its_last_versio
     assert "Round 1." in log and run_targets(run)[0].note is None
 
 
+def test_a_lane_whose_profile_has_no_lines_is_skipped_as_one_with_none(
+    app, db, research_world
+):  # Ruling 32
+    publish(
+        db,
+        20,
+        Lane.TWO,
+        ReviewForm(rating=7, text="Planning every turn together is the fun part."),
+        FIXED_NOW,
+    )
+    # The refresh gives Two players its first version, with only an open question.
+    research_world["profile"] = profile_reply(open_questions=["Does co-op suit them?"])
+    run = research(app, db)
+    note = "No profile yet for Two players. Publish a review played at this head count first."
+    assert messages(db, run).count(note) == 1
+    assert run_targets(run)[1].note == note
+    skipped = db.scalar(
+        select(ResearchEvent).where(
+            ResearchEvent.run_id == run.id, ResearchEvent.message == note
+        )
+    )
+    assert (skipped.step, skipped.lane, skipped.round) == ("skipped", "two", None)
+    two_rounds = db.scalar(
+        select(func.count())
+        .select_from(ResearchEvent)
+        .where(ResearchEvent.run_id == run.id, ResearchEvent.lane == "two")
+        .where(ResearchEvent.round.is_not(None))
+    )
+    assert two_rounds == 0
+
+
 def test_a_lane_whose_first_review_the_refresh_learns_is_researched(
     app, db, research_world
 ):
