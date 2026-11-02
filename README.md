@@ -2,11 +2,19 @@
 
 Game Taste turns your reviews of the games you play into a picture of what works for you and the people you play with, and uses that picture to recommend what to play next. You run your own copy in a container on your own computer. Your Steam library, reviews and keys are stored there, and your reviews are sent to the AI provider you pick. See [the vision](docs/vision.md) for what it is for and why.
 
+![The Recommendations page for the Solo lane. Each pick shows its Steam facts with the date each was checked, the profile lines it fits with how it fits them, and its main risk.](docs/screenshots/recommendations.png)
+
+The screenshots show a demo library with made-up reviews.
+
 ## What works today
 
 Setup, the Library, reviews written by lane (with drafts and a history of every version), taste profiles, the daily refresh that keeps them current, research, the Recommendations page, and Settings. Research finds games for each lane and the Recommendations page lists what it found, by lane and status, with the reasons. Starting a game, declining it and marking it as played come in the next update, so for now the page is for reading.
 
+![The review dialog for Deep Rock Galactic, open on the Three to four lane: a rating from 1 to 10, the review, tags, status, verdict, and whether you can walk away mid-game.](docs/screenshots/review.png)
+
 Home shows your numbers: how many games you've reviewed, your play time, your average rating and your most played game. Only published reviews count, not drafts. Play time is Steam's own count for the games you own, so a game left running counts too.
+
+![Home: games reviewed, play time, average rating and the most played game, above the games marked as currently playing.](docs/screenshots/home.png)
 
 ## Quick start
 
@@ -37,6 +45,8 @@ Inside the container, `localhost` means the container itself, not your computer.
 
 A taste profile is a short read on what works for one set of players: what they loved, what rules a game out, the patterns across their reviews, and hunches still to test. There is one for each lane (Solo, Two players, Three to four, Five or more) and one for each named group. Profiles are built from your published reviews, not drafts. Profiles lists every lane and every named group. A profile fills in at the first refresh after its lane or group has a published review. Until then its page says there are no reviews yet, or that they're waiting for the next refresh.
 
+![The Solo profile at version 2. Each line under What you love and Dealbreakers is tagged Stated or Observed and names the games it came from.](docs/screenshots/profile.png)
+
 The refresh keeps the profiles current. It runs every day at the Refresh time under Schedule in Settings, in the timezone set there, and whenever you select "Refresh now" on Settings or Profiles. If Steam is connected, the refresh syncs your library first. If the app was off at the set time, the refresh runs when the app starts again. While it runs, Settings and Profiles show what it is doing and which profile it is on.
 
 For each profile with new reviews, the refresh asks the Everyday tasks model to update the profile, with one request for every 20 new reviews, rounded up. A reply the app can't read is asked for once more, so a batch of reviews can take two requests. Editing a review and publishing it again counts as a new review. A review tagged with a named group counts for both its lane's profile and the group's, so it is sent for each. The cost depends on the provider you chose. Each request carries the instructions, the current profile and up to 20 reviews, so give a local model a context of at least 16,000 tokens, because many local servers default to less. Each update is saved as a new version. If an update fails its checks, the profile keeps its last version, the refresh status says why, and those reviews are sent again at the next refresh.
@@ -50,6 +60,8 @@ Research finds games for each lane and puts the ones that pass a check on the Re
 Two jobs share the work. The Recommender proposes games from a pool the app gathers: games you own and haven't played much, games the web searches turn up, and earlier picks the app lets back in. Each proposal names the lines of the profile it fits and its main risk. The Review judge then rules on each proposal, accept or reject, with a reason. Only a game the judge accepts reaches Recommendations.
 
 Each lane fills to 20 recommended games. A lane that already has 20 or more gets exactly 5 more, but only if you tick its box when you start the run. Three rounds run on their own. If a lane is still short after that, the run pauses, and each "Run one more round" runs exactly one more. "Stop here" ends the run. Cancel works at any point and keeps the games the judge has already accepted. A restart pauses a run in progress, and "Run one more round" carries on from there. Past runs stay listed on the Research page.
+
+![The end of a research run's log on the Research page. Each line names its round and its lane and says what happened, and the run has paused after round 3 with Run one more round, Stop here and Cancel research.](docs/screenshots/research.png)
 
 ### What one lane costs in one round
 
