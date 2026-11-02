@@ -45,11 +45,11 @@ Your reviews go to the provider you picked for Everyday tasks, exactly as you wr
 
 ## Research and recommendations
 
-Research finds games for each lane and puts the ones that pass a check on the Recommendations page. It runs only when you select "Run research" on the Research page, never by itself. It covers every lane that has a profile. A lane without one is skipped, and the log says so. Before the first round, research refreshes the profiles, Steam sync included, exactly as "Refresh now" does, so it works from your latest reviews.
+Research finds games for each lane and puts the ones that pass a check on the Recommendations page. It runs only when you select "Run research" on the Research page, never by itself. It covers every lane that has a profile. A lane without one is skipped, and the log says so. Before the first round, research refreshes the profiles, with a Steam sync if Steam is connected, exactly as "Refresh now" does, so it works from your latest reviews.
 
-Two models share the work. The Recommender proposes games from a pool the app gathers: games you own and haven't played much, games the web searches turn up, and earlier picks the app lets back in. Each proposal names the lines of the profile it fits and its main risk. The Review judge then rules on each proposal, accept or reject, with a reason. Only a game the judge accepts reaches Recommendations.
+Two jobs share the work. The Recommender proposes games from a pool the app gathers: games you own and haven't played much, games the web searches turn up, and earlier picks the app lets back in. Each proposal names the lines of the profile it fits and its main risk. The Review judge then rules on each proposal, accept or reject, with a reason. Only a game the judge accepts reaches Recommendations.
 
-Each lane fills to 20 recommended games. A lane that already has 20 gets exactly 5 more, but only if you tick its box when you start the run. Three rounds run on their own. If a lane is still short after that, the run pauses, and each "Run one more round" runs exactly one more. "Stop here" ends the run. Cancel works at any point and keeps the games the judge has already accepted. A restart pauses a run in progress, and "Run one more round" carries on from there. Past runs stay listed on the Research page.
+Each lane fills to 20 recommended games. A lane that already has 20 or more gets exactly 5 more, but only if you tick its box when you start the run. Three rounds run on their own. If a lane is still short after that, the run pauses, and each "Run one more round" runs exactly one more. "Stop here" ends the run. Cancel works at any point and keeps the games the judge has already accepted. A restart pauses a run in progress, and "Run one more round" carries on from there. Past runs stay listed on the Research page.
 
 ### What one lane costs in one round
 
@@ -60,14 +60,16 @@ Each lane fills to 20 recommended games. A lane that already has 20 gets exactly
 - A reply the app can't read is asked for once more, as in the refresh.
 - Steam's store pages are read for each game's details, review summary and latest patch notes. They need no key. Facts older than 7 days are fetched again before they are used. If Steam doesn't answer the review summary, picks show no review score and everything else works.
 
+These counts are for one lane in one round, so a full run multiplies them by its lanes and rounds. The cost depends on the provider you chose.
+
 ### What is sent where
 
-- The Recommender gets the lane's profile lines, what this run has rejected so far, your owned games with little play time (names and hours played), the candidates' Steam details, and the web search results.
-- The Review judge gets the profile lines and the proposals with their facts. It also gets the reviews behind the profile, the newest 40, exactly as you wrote them, and the reasons for any earlier verdicts on a game.
+- The Recommender gets the lane's profile lines, what this run has rejected so far, your owned games with under 2 hours of play (names and hours played), the candidates' Steam details, and the web search results.
+- The Review judge gets the profile lines, the proposals with their facts, and the reasons for any earlier verdicts on a game. It also gets the reviews behind the profile, the newest 40, exactly as you wrote them, each with the names of the people you played with, the group, the tags and the Steam hours.
 - Everyday tasks gets web search results for a game's player count.
 - Tavily gets the searches the Recommender writes, and for player counts the game's name with the words "number of players co-op multiplayer".
 
-To keep your reviews on your computer, pick a local server for the Review judge as well as for Everyday tasks.
+A local server for the Review judge, as well as for Everyday tasks, keeps your review text on your computer. The Recommender still gets the profile lines, which are written from your reviews, and its web searches go to Tavily. To keep the rest local too, use a local server for the Recommender as well. Tavily always gets the searches.
 
 ## Security note
 
