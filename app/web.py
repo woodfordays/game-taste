@@ -30,6 +30,10 @@ _ID = re.compile(r"[0-9]{1,19}")  # MAX_ID has 19 digits
 # Starlette creates the Jinja environment with autoescape on.
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+# The Ember badge for each evidence tag (partials/tag_badge.html). The badge carries the word as
+# well, so the color is never the only signal.
+TAG_TONES = {"stated": "neutral", "observed": "info", "guess": "warning"}
+
 _MONTHS = (
     "Jan",
     "Feb",

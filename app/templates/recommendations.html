@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{#- The Recommendations page: a lane control, the status tabs with their counts, then a pick for each game. Context: `lanes` and `tabs`
+    (Choice: `label`, `href`, `current` and, for a tab, `count`), `picks` (PickView, drawn by partials/pick.html), `empty` (what to say
+    when the tab has no picks) and `to_research` (the empty message also links to Research).
+
+    The lane control is Ember's segmented control and the tabs are Ember's Tabs, both as links, because each choice is a page of its own
+    that can be linked to. Ember's own tabs are buttons with the tab roles and a panel, which would promise arrow-key movement that
+    plain links don't have, so the current choice is marked with `aria-current="page"` instead. Choosing a lane keeps the status and
+    choosing a status keeps the lane.
+
+    The page only reads in this plan, so it has no primary button. The one button is the secondary "Go to Research" of an empty
+    Recommended tab. Every piece of text is escaped like any text; nothing here marks it as safe. -#}
+{% block title %}Recommendations - Game Taste{% endblock %}
+{% block content %}
+<h1 class="text-headline recs-title">Recommendations</h1>
+
+<nav class="em-seg em-seg--md recs-lanes" aria-label="Number of players">
+  {%- for lane in lanes %}
+  <a class="em-seg__item text-label{% if lane.current %} is-checked{% endif %}" href="{{ lane.href }}"{% if lane.current %} aria-current="page"{% endif %}>{{ lane.label }}</a>
+  {%- endfor %}
+</nav>
+
+<nav class="em-tabs recs-tabs" aria-label="Status">
+  <div class="em-tabs__list">
+    {%- for tab in tabs %}
+    <a class="em-tabs__tab text-label{% if tab.current %} is-selected{% endif %}" href="{{ tab.href }}"{% if tab.current %} aria-current="page"{% endif %}>
+      <span>{{ tab.label }}</span>
+      <span class="em-tabs__count text-caption">{{ tab.count }}</span>
+    </a>
+    {%- endfor %}
+  </div>
+</nav>
+
+{% if picks %}
+<ul class="recs-picks">
+  {%- for pick in picks %}
+  {% include "partials/pick.html" %}
+  {%- endfor %}
+</ul>
+{% else %}
+<div class="em-empty">
+  <p class="em-empty__desc text-body-lg">{{ empty }}</p>
+  {%- if to_research %}
+  <div class="em-empty__actions">
+    <a class="em-btn em-btn--secondary em-btn--md text-label" href="/research"><span class="em-btn__label">Go to Research</span></a>
+  </div>
+  {%- endif %}
+</div>
+{% endif %}
+{% endblock %}

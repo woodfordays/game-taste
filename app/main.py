@@ -23,6 +23,7 @@ from app.routes import home as home_routes
 from app.routes import library as library_routes
 from app.routes import onboarding as onboarding_routes
 from app.routes import profiles as profile_routes
+from app.routes import recommendations as recommendation_routes
 from app.routes import refresh as refresh_routes
 from app.routes import research as research_routes
 from app.routes import reviews as review_routes
@@ -115,6 +116,7 @@ def create_app(data_dir: Path, *, services: Services | None = None) -> FastAPI:
     app.include_router(library_routes.router)
     app.include_router(review_routes.router)
     app.include_router(profile_routes.router)
+    app.include_router(recommendation_routes.router)
     app.include_router(refresh_routes.router)
     app.include_router(research_routes.router)
     app.include_router(settings_routes.router)

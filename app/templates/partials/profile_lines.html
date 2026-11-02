@@ -1,4 +1,5 @@
 {% from "partials/field.html" import select_field %}
+{% from "partials/tag_badge.html" import tag_badge %}
 {#- The body of a profile page: which version is on screen, the version select, the sections, then the changelog. Context: `shown`,
     `history`, `base_url` and `questions_label` (see profile.html). Picking a version swaps this whole block and pushes the URL, so a
     reload or a shared link keeps the version. htmx snapshots a page for Back and Forward from its markup, which still says the select was never
@@ -38,7 +39,7 @@
         {%- for line in section.lines %}
         <li class="profile-line">
           <div class="profile-line__main">
-            <span class="em-badge em-badge--{{ line.tone }} em-badge--sm text-caption">{{ line.tag_label }}</span>
+            {{ tag_badge(line.tag_label, line.tone) }}
             <p class="profile-line__text text-body">{{ line.text }}</p>
           </div>
           {%- if line.games %}

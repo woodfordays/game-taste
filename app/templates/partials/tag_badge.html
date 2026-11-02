@@ -1,0 +1,6 @@
+{#- An evidence tag as an Ember badge: the tag's word (`label`: Stated, Observed or Guess), in the badge variant for it (`tone`: neutral, info
+    or warning, from TAG_TONES in app/web.py). The badge carries the word, so the color is never the only signal. Shared by the profile
+    lines and by the picks on the Recommendations page. -#}
+{% macro tag_badge(label, tone) -%}
+<span class="em-badge em-badge--{{ tone }} em-badge--sm text-caption">{{ label }}</span>
+{%- endmacro %}

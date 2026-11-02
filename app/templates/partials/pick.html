@@ -1,0 +1,65 @@
+{% from "partials/art.html" import game_art %}
+{% from "partials/tag_badge.html" import tag_badge %}
+{#- One pick on the Recommendations page. Context: `pick` (a PickView: the `game`, whether it is in `early_access`, the `source` label, the
+    `facts` as rows of a label, a value and the date that value was fetched, the `fits` and the main `risk`) and `now` and `tz` for the
+    dates. The root keeps its id so that a later plan can swap one pick for itself.
+
+    A fact's date sits with its own value, so no value is shown without when it was checked; the rows the pick has no fact for are
+    left out, and so is the price of a game the user owns. Each fit is the profile line's tag as a badge, then the line's text, with how
+    the game meets it under it as a caption. All of it is escaped like any text. -#}
+{%- set game = pick.game %}
+<li id="pick-{{ game.appid }}" class="recs-pick em-card">
+  <div class="em-card__body recs-pick__body">
+    {{ game_art(game, "recs-pick__art", 230, 108) }}
+    <div class="recs-pick__main">
+      <div class="recs-pick__titles">
+        <div class="recs-pick__head">
+          <h2 class="recs-pick__name text-subtitle">{{ game.name }}</h2>
+          {%- if game.owned or pick.early_access %}
+          <div class="recs-pick__badges">
+            {%- if game.owned %}
+            <span class="em-badge em-badge--success em-badge--sm text-caption">Owned</span>
+            {%- endif %}
+            {%- if pick.early_access %}
+            <span class="em-badge em-badge--warning em-badge--sm text-caption">Early Access</span>
+            {%- endif %}
+          </div>
+          {%- endif %}
+        </div>
+        <p class="recs-pick__source text-caption">{{ pick.source }}</p>
+      </div>
+
+      {%- if pick.facts %}
+      <dl class="recs-facts">
+        {%- for row in pick.facts %}
+        <div class="recs-fact">
+          <dt class="recs-fact__label text-caption">{{ row.label }}</dt>
+          <dd class="recs-fact__value text-body">{{ row.value }} <span class="recs-fact__checked text-caption">checked {{ row.fetched_at | when }}</span></dd>
+        </div>
+        {%- endfor %}
+      </dl>
+      {%- endif %}
+
+      {%- if pick.fits %}
+      <section class="recs-fits" aria-labelledby="pick-{{ game.appid }}-fits">
+        <h3 id="pick-{{ game.appid }}-fits" class="text-label">Why it fits</h3>
+        <ul class="recs-fits__list">
+          {%- for fit in pick.fits %}
+          <li class="recs-fit">
+            <div class="recs-fit__main">
+              {{ tag_badge(fit.tag_label, fit.tone) }}
+              <p class="recs-fit__text text-body">{{ fit.text }}</p>
+            </div>
+            {%- if fit.how %}
+            <p class="recs-fit__how text-caption">{{ fit.how }}</p>
+            {%- endif %}
+          </li>
+          {%- endfor %}
+        </ul>
+      </section>
+      {%- endif %}
+
+      <p class="recs-pick__risk text-body">Main risk: {{ pick.risk }}</p>
+    </div>
+  </div>
+</li>

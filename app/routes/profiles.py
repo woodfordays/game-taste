@@ -34,7 +34,7 @@ from app.services.profiles import (
 )
 from app.services.refresh_status import refresh_context
 from app.services.reviews import LANE_LABELS, Lane
-from app.web import is_htmx, parse_id, render
+from app.web import TAG_TONES, is_htmx, parse_id, render
 
 router = APIRouter()
 
@@ -55,10 +55,6 @@ WAITING_MESSAGES = {
         "The profile builds then."
     ),
 }
-
-# The Ember badge for each tag. The badge carries the word as well, so the color is never
-# the only signal.
-TAG_TONES = {"stated": "neutral", "observed": "info", "guess": "warning"}
 
 UNKNOWN_GAME = "Unknown game"
 

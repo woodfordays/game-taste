@@ -1473,3 +1473,168 @@
   margin: 0;
   color: var(--ink-muted);
 }
+
+/* The Recommendations page: a title, the lane control, the status tabs, then a card for each
+   pick. The lane control and the tabs are links, which Ember draws for buttons, so they lose
+   the underline. A narrow screen wraps the lanes rather than cutting them off. */
+.recs-title {
+  margin: 0 0 var(--space-6);
+}
+
+.recs-lanes {
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+
+.recs-lanes .em-seg__item,
+.recs-tabs .em-tabs__tab {
+  text-decoration: none;
+}
+
+.recs-tabs {
+  margin-bottom: var(--space-6);
+}
+
+.recs-picks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The artwork sits beside the pick, and above it when the card is too narrow for both. */
+.recs-pick__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-4) var(--space-5);
+}
+
+.recs-pick__art {
+  flex: none;
+  width: 230px;
+  max-width: 100%;
+  aspect-ratio: 460 / 215;
+  border-radius: var(--radius-sm);
+}
+
+.recs-pick__main {
+  flex: 1 1 280px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.recs-pick__titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.recs-pick__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+.recs-pick__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.recs-pick__name,
+.recs-pick__source,
+.recs-pick__risk {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.recs-pick__source {
+  color: var(--ink-muted);
+}
+
+/* Each fact is its label, its value and, under them, when that value was checked. */
+.recs-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+}
+
+.recs-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.recs-fact__label,
+.recs-fact__value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.recs-fact__label,
+.recs-fact__checked {
+  color: var(--ink-muted);
+}
+
+.recs-fact__checked {
+  display: block;
+}
+
+/* Lines are separated by hairlines rather than boxed, like the profile's. */
+.recs-fits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.recs-fits > h3 {
+  margin: 0;
+}
+
+.recs-fits__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.recs-fit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.recs-fit__main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/* The badges share a width so the lines' text starts in one column, as on the profile page. */
+.recs-fit__main .em-badge {
+  flex: none;
+  justify-content: center;
+  min-width: 68px;
+  margin-top: 2px;
+}
+
+.recs-fit__text,
+.recs-fit__how {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.recs-fit__how {
+  color: var(--ink-muted);
+}
